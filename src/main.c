@@ -170,7 +170,14 @@ int main(int argc, char **argv)
     /* Determine model directory */
     const char *model_dir = "/usr/share/tsac";
     {
-        const char *search_paths[] = {"models/tsac", "/usr/share/tsac", "/usr/lib/tsac", NULL};
+        const char *search_paths[] = {
+            "models/tsac",
+            "/usr/share/tsac",
+            "/usr/lib/tsac",
+            "/data/data/com.termux/files/usr/share/tsac",  /* Termux */
+            "/data/data/com.termux/files/home/develop/tsac-ng/models",
+            NULL
+        };
         for (int i = 0; search_paths[i]; i++) {
             char test[512];
             snprintf(test, sizeof(test), "%s/dac_stereo_q8.bin", search_paths[i]);

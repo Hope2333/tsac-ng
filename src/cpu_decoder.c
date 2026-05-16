@@ -57,11 +57,24 @@ static int cpu_has(unsigned int leaf, unsigned int reg, unsigned int bit) {
 #define HAS(leaf, reg, bit) cpu_has(leaf, reg, bit)
 
 const char *cpu_simd_name(void) {
+#if defined(__x86_64__) || defined(__i386__)
     if (HAS(7, 1, 16)) return "AVX-512F";
     if (HAS(7, 1, 5))  return "AVX2";
     if (HAS(1, 2, 28)) return "AVX+FMA";
     if (HAS(1, 2, 20)) return "SSE4.2";
     return "scalar";
+#elif defined(__aarch64__)
+    extern int cpu_arch_has_sve(void);
+    extern const char *cpu_arch_name(void);
+    (void)cpu_arch_init();
+    return cpu_arch_name();
+#elif defined(__riscv)
+    extern const char *cpu_arch_name(void);
+    (void)cpu_arch_init();
+    return cpu_arch_name();
+#else
+    return "scalar";
+#endif
 }
 
 /* ================================================================ */
