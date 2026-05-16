@@ -148,6 +148,31 @@ __global__ void tanh_clip_k(float *x, int n) {
     x[i] = v;
 }
 
+/* RVQ quantization kernels for encoder */
+__global__ void rvq_quantize_k(float *indices, const float *features,
+    const float *codebook, int n_frames, int rvq_dim, int entries) {
+    int f = blockIdx.x * BLK + threadIdx.x;
+    if (f >= n_frames) return;
+    float best = 1e30f; int best_e = 0;
+    for (int e = 0; e < entries; e++) {
+        float d = 0;
+        for (int dim = 0; dim < rvq_dim; dim++) {
+            float df = features[f * rvq_dim + dim] - codebook[e * rvq_dim + dim];
+            d += df * df;
+        }
+        if (d < best) { best = d; best_e = e; }
+    }
+    indices[f] = (float)best_e;
+}
+
+__global__ void rvq_subtract_k(float *features, const float *codebook,
+    const float *indices, int n_frames, int rvq_dim) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= n_frames * rvq_dim) return;
+    int f = tid / rvq_dim, d = tid % rvq_dim;
+    features[tid] -= codebook[(int)indices[f] * rvq_dim + d];
+}
+
 /* ================================================================ */
 /*  CPU-side tensor finder and weight upload                         */
 /* ================================================================ */
@@ -283,6 +308,12 @@ static GpuWeight *hip_find_weight(HipBackend *b, const char *name) {
     return NULL;
 }
 
+static GpuWeight *hip_find_enc_weight(HipBackend *b, const char *name) {
+    char fullname[256];
+    snprintf(fullname, sizeof(fullname), "enc:%s", name);
+    return hip_find_weight(b, fullname);
+}
+
 /* CPU-side dequantization helper for weight cache */
 static float *dequant_weights(const DACTensor *weight_v, const DACTensor *weight_g,
                                const DACTensor *bias,
@@ -401,6 +432,70 @@ static int hip_upload_weights(HipBackend *b, DACTensor *ts, int nt) {
         }
     }
 
+    /* Upload encoder weights with "enc:" prefix */
+    const char *enc_weight_names[] = {
+        "encoder.model.0",
+        "encoder.model.1.block.1",
+        "encoder.model.2.block.1",
+        "encoder.model.3.block.1",
+        "encoder.model.4.block.1",
+        "encoder.model.6",
+        /* Inner blocks */
+        "encoder.model.1.block.2.block.1",
+        "encoder.model.1.block.3.block.1",
+        "encoder.model.1.block.4.block.1",
+        "encoder.model.2.block.2.block.1",
+        "encoder.model.2.block.3.block.1",
+        "encoder.model.2.block.4.block.1",
+        "encoder.model.3.block.2.block.1",
+        "encoder.model.3.block.3.block.1",
+        "encoder.model.3.block.4.block.1",
+        "encoder.model.4.block.2.block.1",
+        "encoder.model.4.block.3.block.1",
+        "encoder.model.4.block.4.block.1",
+    };
+    int n_enc_wl = sizeof(enc_weight_names) / sizeof(enc_weight_names[0]);
+    for (int i = 0; i < n_enc_wl && b->n_gpu_weights < MAX_GPU_WEIGHTS; i++) {
+        char wv[160], wg[160], bi[160];
+        snprintf(wv, sizeof(wv), "%s.weight_v", enc_weight_names[i]);
+        snprintf(wg, sizeof(wg), "%s.weight_g", enc_weight_names[i]);
+        snprintf(bi, sizeof(bi), "%s.bias",      enc_weight_names[i]);
+
+        DACTensor *twv = F(ts, nt, wv);
+        DACTensor *twg = F(ts, nt, wg);
+        DACTensor *tbi = F(ts, nt, bi);
+
+        if (!twv) continue;
+
+        int Ci, K, Co, is_convt;
+        float *w_f32 = dequant_weights(twv, twg, tbi, &Ci, &K, &Co, &is_convt);
+        if (!w_f32) continue;
+
+        GpuWeight *gw = &b->gpu_weights[b->n_gpu_weights++];
+        snprintf(gw->name, sizeof(gw->name), "enc:%s", enc_weight_names[i]);
+        gw->Ci = Ci;
+        gw->K  = K;
+        gw->Co = Co;
+        gw->is_convt = is_convt;
+
+        size_t w_bytes = (size_t)Ci * K * Co * sizeof(float);
+        hipMalloc(&gw->d_data, w_bytes);
+        hipMemcpy(gw->d_data, w_f32, w_bytes, hipMemcpyHostToDevice);
+        free(w_f32);
+
+        if (tbi && b->n_gpu_weights < MAX_GPU_WEIGHTS) {
+            GpuWeight *gbias = &b->gpu_weights[b->n_gpu_weights++];
+            snprintf(gbias->name, sizeof(gbias->name), "enc:%s.bias", enc_weight_names[i]);
+            gbias->Ci = tbi->dims[0];
+            gbias->K = 1;
+            gbias->Co = 1;
+            gbias->is_convt = 0;
+            size_t bias_bytes = (size_t)tbi->dims[0] * sizeof(float);
+            hipMalloc(&gbias->d_data, bias_bytes);
+            hipMemcpy(gbias->d_data, tbi->data, bias_bytes, hipMemcpyHostToDevice);
+        }
+    }
+
     /* Upload snake alpha tensors */
     const char *snake_names[] = {
         "decoder.model.1.block.0.alpha",
@@ -427,6 +522,37 @@ static int hip_upload_weights(HipBackend *b, DACTensor *ts, int nt) {
         size_t n_bytes = (size_t)ta->dims[0] * sizeof(float);
         GpuWeight *gw = &b->gpu_weights[b->n_gpu_weights++];
         snprintf(gw->name, sizeof(gw->name), "%s", snake_names[i]);
+        gw->Ci = ta->dims[0]; gw->K = 1; gw->Co = 1; gw->is_convt = 0;
+        hipMalloc(&gw->d_data, n_bytes);
+        hipMemcpy(gw->d_data, ta->data, n_bytes, hipMemcpyHostToDevice);
+    }
+
+    /* Upload encoder snake alphas with "enc:" prefix */
+    const char *enc_snake_names[] = {
+        "encoder.model.1.block.0.alpha",
+        "encoder.model.2.block.0.alpha",
+        "encoder.model.3.block.0.alpha",
+        "encoder.model.4.block.0.alpha",
+        "encoder.model.5.alpha",
+        "encoder.model.1.block.2.block.0.alpha",
+        "encoder.model.1.block.3.block.0.alpha",
+        "encoder.model.1.block.4.block.0.alpha",
+        "encoder.model.2.block.2.block.0.alpha",
+        "encoder.model.2.block.3.block.0.alpha",
+        "encoder.model.2.block.4.block.0.alpha",
+        "encoder.model.3.block.2.block.0.alpha",
+        "encoder.model.3.block.3.block.0.alpha",
+        "encoder.model.3.block.4.block.0.alpha",
+        "encoder.model.4.block.2.block.0.alpha",
+        "encoder.model.4.block.3.block.0.alpha",
+        "encoder.model.4.block.4.block.0.alpha",
+    };
+    for (int i = 0; i < (int)(sizeof(enc_snake_names)/sizeof(enc_snake_names[0])) && b->n_gpu_weights < MAX_GPU_WEIGHTS; i++) {
+        DACTensor *ta = F(ts, nt, enc_snake_names[i]);
+        if (!ta) continue;
+        size_t n_bytes = (size_t)ta->dims[0] * sizeof(float);
+        GpuWeight *gw = &b->gpu_weights[b->n_gpu_weights++];
+        snprintf(gw->name, sizeof(gw->name), "enc:%s", enc_snake_names[i]);
         gw->Ci = ta->dims[0]; gw->K = 1; gw->Co = 1; gw->is_convt = 0;
         hipMalloc(&gw->d_data, n_bytes);
         hipMemcpy(gw->d_data, ta->data, n_bytes, hipMemcpyHostToDevice);
@@ -676,5 +802,204 @@ extern "C" int dac_decoder_run(DACTensor *ts, int nt,
     b->d_codes = NULL;
 
     fprintf(stderr, "[hip] completed: output samples=%d\n", cur_T);
+    return TSAC_OK;
+}
+
+/* ================================================================ */
+/*  Encoder run function (mirrors CUDA encoder)                      */
+/* ================================================================ */
+
+extern "C" int dac_encoder_run(DACTensor *ts, int nt,
+    const float *pcm, int n_samples, int channels,
+    int n_codebooks, int *codes, int *n_frames)
+{
+    fprintf(stderr, "[hip] dac_encoder_run: nt=%d samples=%d ch=%d cb=%d\n",
+            nt, n_samples, channels, n_codebooks);
+
+    /* Static backend storage for weight caching across calls */
+    static HipBackend *b = NULL;
+    if (!b) {
+        b = (HipBackend *)calloc(1, sizeof(HipBackend));
+        if (!b) return TSAC_ERR_MEMORY;
+        hipSetDevice(0);
+        hipStreamCreate(&b->stream);
+        b->initialized = 1;
+    }
+
+    hipStream_t s = b->stream;
+
+    /* Lazy weight upload on first call */
+    if (!b->weights_uploaded) {
+        int ret = hip_upload_weights(b, ts, nt);
+        if (ret != TSAC_OK) return ret;
+    }
+
+    if (n_samples < 1) return TSAC_OK;
+
+    /* Calculate frame count */
+    int block_len = 512;  /* DAC default block length */
+    int nf = (n_samples + block_len - 1) / block_len;
+    if (nf < 1) nf = 1;
+    *n_frames = nf;
+
+    /* Upload PCM to GPU */
+    size_t pcm_bytes = (size_t)n_samples * channels * sizeof(float);
+    float *d_pcm;
+    hipMalloc(&d_pcm, pcm_bytes);
+    hipMemcpy(d_pcm, pcm, pcm_bytes, hipMemcpyHostToDevice);
+
+    /* encoder.model.6: Conv1d(channels->96, K=7) */
+    GpuWeight *e6 = hip_find_enc_weight(b, "encoder.model.6");
+    float *d_cur = hip_backend_get_buf(b, 0, 96 * nf * sizeof(float));
+    if (!d_cur) { hipFree(d_pcm); return TSAC_ERR_MEMORY; }
+    hipMemsetAsync(d_cur, 0, 96 * nf * sizeof(float), s);
+    if (e6) {
+        GpuWeight *b6 = hip_find_enc_weight(b, "encoder.model.6.bias");
+        conv1d_k<<<dim3(96, (nf+BLK-1)/BLK), dim3(1, BLK), 0, s>>>(
+            d_cur, d_pcm, e6->d_data, b6 ? b6->d_data : NULL,
+            nf, e6->K, e6->Ci, e6->Co, 1);
+    }
+    hipFree(d_pcm);
+
+    /* encoder.model.5: Snake(96) */
+    GpuWeight *e5 = hip_find_enc_weight(b, "encoder.model.5.alpha");
+    if (e5) {
+        snake_k<<<(96 * nf + BLK - 1) / BLK, BLK, 0, s>>>(
+            d_cur, d_cur, e5->d_data, 96 * nf, 96);
+    }
+
+    /* Blocks 4->3->2->1 (reverse order: 96->192->384->768->1536) */
+    int enc_c_out[4] = {192, 384, 768, 1536};
+    int cur_C = 96;
+    int cur_T = nf;
+
+    for (int blk = 4; blk >= 1; blk--) {
+        int idx = 4 - blk;
+
+        /* Snake before conv */
+        char sname[128];
+        snprintf(sname, sizeof(sname), "encoder.model.%d.block.0.alpha", blk);
+        GpuWeight *sa = hip_find_enc_weight(b, sname);
+        if (sa) {
+            snake_k<<<(cur_C * cur_T + BLK - 1) / BLK, BLK, 0, s>>>(
+                d_cur, d_cur, sa->d_data, cur_C * cur_T, sa->Ci);
+        }
+
+        /* Conv1d (no downsampling in DAC encoder, stride=1) */
+        char wname[128];
+        snprintf(wname, sizeof(wname), "encoder.model.%d.block.1", blk);
+        GpuWeight *cw = hip_find_enc_weight(b, wname);
+        int next_C = enc_c_out[idx];
+        int next_T = cur_T;
+
+        float *d_next = hip_backend_get_buf(b, idx + 1, next_C * next_T * sizeof(float));
+        if (!d_next) return TSAC_ERR_MEMORY;
+        hipMemsetAsync(d_next, 0, next_C * next_T * sizeof(float), s);
+
+        if (cw) {
+            conv1d_k<<<dim3(next_C, (next_T+BLK-1)/BLK), dim3(1, BLK), 0, s>>>(
+                d_next, d_cur, cw->d_data, NULL,
+                next_T, cw->K, cw->Ci, cw->Co, 1);
+            char bname[128];
+            snprintf(bname, sizeof(bname), "encoder.model.%d.block.1.bias", blk);
+            GpuWeight *cb = hip_find_enc_weight(b, bname);
+            if (cb) {
+                add_bias_k<<<dim3(next_T, (next_C+BLK-1)/BLK), dim3(1, BLK), 0, s>>>(
+                    d_next, cb->d_data, next_T, next_C);
+            }
+        }
+
+        d_cur = d_next;
+        cur_C = next_C;
+        cur_T = next_T;
+
+        /* Inner blocks (snake->conv1d K=7->snake->conv1d K=1) x 3 */
+        for (int inner = 2; inner <= 4; inner++) {
+            /* Snake */
+            char isname[160];
+            snprintf(isname, sizeof(isname), "encoder.model.%d.block.%d.block.0.alpha", blk, inner);
+            GpuWeight *gis = hip_find_enc_weight(b, isname);
+            if (gis) {
+                snake_k<<<(cur_C * cur_T + BLK - 1) / BLK, BLK, 0, s>>>(
+                    d_cur, d_cur, gis->d_data, cur_C * cur_T, gis->Ci);
+            }
+
+            /* Conv1d K=7 */
+            char iwname[160], ibname[160];
+            snprintf(iwname, sizeof(iwname), "encoder.model.%d.block.%d.block.1", blk, inner);
+            snprintf(ibname, sizeof(ibname), "encoder.model.%d.block.%d.block.1.bias", blk, inner);
+            GpuWeight *giw = hip_find_enc_weight(b, iwname);
+            GpuWeight *gib = hip_find_enc_weight(b, ibname);
+            if (giw) {
+                float *d_tmp = hip_backend_get_buf(b, 6, cur_C * cur_T * sizeof(float));
+                if (!d_tmp) return TSAC_ERR_MEMORY;
+                hipMemsetAsync(d_tmp, 0, cur_C * cur_T * sizeof(float), s);
+                conv1d_k<<<dim3(cur_C, (cur_T+BLK-1)/BLK), dim3(1, BLK), 0, s>>>(
+                    d_tmp, d_cur, giw->d_data, NULL,
+                    cur_T, giw->K, giw->Ci, giw->Co, 1);
+                if (gib) {
+                    add_bias_k<<<dim3(cur_T, (cur_C+BLK-1)/BLK), dim3(1, BLK), 0, s>>>(
+                        d_tmp, gib->d_data, cur_T, cur_C);
+                }
+                d_cur = d_tmp;
+            }
+        }
+    }
+
+    /* encoder.model.0: Conv1d(1536->1024, K=7) */
+    GpuWeight *e0 = hip_find_enc_weight(b, "encoder.model.0");
+    float *d_features = hip_backend_get_buf(b, 5, 1024 * cur_T * sizeof(float));
+    if (!d_features) return TSAC_ERR_MEMORY;
+    hipMemsetAsync(d_features, 0, 1024 * cur_T * sizeof(float), s);
+    if (e0) {
+        conv1d_k<<<dim3(1024, (cur_T+BLK-1)/BLK), dim3(1, BLK), 0, s>>>(
+            d_features, d_cur, e0->d_data, NULL,
+            cur_T, e0->K, e0->Ci, e0->Co, 1);
+        GpuWeight *b0 = hip_find_enc_weight(b, "encoder.model.0.bias");
+        if (b0) {
+            add_bias_k<<<dim3(cur_T, (1024+BLK-1)/BLK), dim3(1, BLK), 0, s>>>(
+                d_features, b0->d_data, cur_T, 1024);
+        }
+    }
+
+    hipStreamSynchronize(s);
+
+    /* RVQ quantization */
+    float *d_residual;
+    hipMalloc(&d_residual, 1024 * cur_T * sizeof(float));
+    hipMemcpy(d_residual, d_features, 1024 * cur_T * sizeof(float), hipMemcpyDeviceToDevice);
+
+    float *d_indices;
+    hipMalloc(&d_indices, cur_T * sizeof(float));
+
+    for (int cb = 0; cb < n_codebooks && cb < b->n_cb; cb++) {
+        /* Quantize against codebook cb */
+        rvq_quantize_k<<<(cur_T + BLK - 1) / BLK, BLK, 0, s>>>(
+            d_indices, d_residual,
+            b->d_cb_data + b->cb_offsets[cb],
+            cur_T, 1024, b->cb_entries);
+        hipGetLastError();
+
+        /* Copy indices to host */
+        float *h_indices_f = (float *)malloc(cur_T * sizeof(float));
+        hipMemcpy(h_indices_f, d_indices, cur_T * sizeof(float), hipMemcpyDeviceToHost);
+        for (int i = 0; i < cur_T; i++) {
+            codes[cb * cur_T + i] = (int)h_indices_f[i];
+        }
+        free(h_indices_f);
+
+        /* Subtract codebook entry */
+        rvq_subtract_k<<<(cur_T * 1024 + BLK - 1) / BLK, BLK, 0, s>>>(
+            d_residual, b->d_cb_data + b->cb_offsets[cb],
+            d_indices, cur_T, 1024);
+        hipGetLastError();
+    }
+
+    hipFree(d_residual);
+    hipFree(d_indices);
+
+    hipStreamSynchronize(s);
+
+    fprintf(stderr, "[hip] encoder completed: frames=%d\n", cur_T);
     return TSAC_OK;
 }
