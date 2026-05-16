@@ -1,8 +1,11 @@
 # tsac-ng — Neural Audio Codec (Multi-Backend)
 
-**tsac-ng v0.1.0** — Clean-room reimplementation of TSAC, a very low bitrate
-neural audio codec by Fabrice Bellard. Compatible with the original `.txc`
-container format and `.bin` model files.
+**tsac-ng v0.1.0** — Clean-room implementation of a neural audio codec,
+independently developed from first principles. Compatible with the `.txc`
+container format and `.bin` model files used by TSAC.
+
+> Relationship to TSAC: Like Linux to Unix — same ecosystem compatibility,
+> built from scratch with zero shared code.
 
 ## Features
 
@@ -129,5 +132,4 @@ MIT
 
 ```
 tsac-ng v0.1.0 — Copyright (c) 2026 Hope2333 (幽零小喵)
-Based on: tsac version 2024-04-08, Copyright (c) 2023-2024 Fabrice Bellard
 ```

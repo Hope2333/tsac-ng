@@ -38,3 +38,6 @@ models/
 /tmp/
 *.wav
 *.pcm
+
+# AI-LTC state (local only, not versioned)
+.ai/
