@@ -74,10 +74,17 @@ int txc_write(const TSCHeader *hdr,
     if (!buf) return TSAC_ERR_MEMORY;
 
     TSCHeader *out_hdr = (TSCHeader *)buf;
-    memcpy(out_hdr, hdr, hdr_size);
-    out_hdr->n_blocks   = (uint32_t)n_frames;
+    buf[0] = hdr->magic[0]; buf[1] = hdr->magic[1];
+    buf[2] = hdr->magic[2]; buf[3] = hdr->magic[3];
+    buf[4] = (uint8_t)(hdr->version >> 8);
+    buf[5] = (uint8_t)(hdr->version & 0xFF);
+    buf[6] = (uint8_t)(hdr->flags & 0xFF);
+    buf[7] = (uint8_t)(hdr->n_codebooks & 0xFF);
+    uint32_t be32;
+    be32 = hdr->block_len;   buf[ 8]=(be32>>24); buf[ 9]=(be32>>16); buf[10]=(be32>>8); buf[11]=be32;
+    be32 = hdr->sample_rate; buf[12]=(be32>>24); buf[13]=(be32>>16); buf[14]=(be32>>8); buf[15]=be32;
+    out_hdr->n_blocks = (uint32_t)n_frames;
     out_hdr->data_offset = (uint32_t)hdr_size;
-    out_hdr->n_codebooks = hdr->n_codebooks;
 
     uint8_t *idx_data = buf + hdr_size;
     for (size_t i = 0; i < idx_count; i++)
@@ -108,7 +115,9 @@ int txc_read(const uint8_t *data, size_t data_size,
     hdr->magic[0] = 'F'; hdr->magic[1] = 'B';
     hdr->magic[2] = 'A'; hdr->magic[3] = 'Z';
 
-    hdr->version = (uint16_t)((data[4] << 8) | data[5]);
+    uint16_t ver_be = (uint16_t)((data[4] << 8) | data[5]);
+    uint16_t ver_le = (uint16_t)(data[4] | (data[5] << 8));
+    hdr->version = (ver_be >= 1 && ver_be <= 255) ? ver_be : ver_le;
 
     if (hdr->version < 1 || hdr->version > 255)
         return TSAC_ERR_FORMAT;

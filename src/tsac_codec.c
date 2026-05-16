@@ -245,13 +245,16 @@ int tsac_compress_file(TSACContext *ctx, const char *in_wav, const char *out_txc
     uint16_t channels  = wav_hdr[22] | ((uint16_t)wav_hdr[23] << 8);
     uint32_t data_size = 0;
 
-    if (audio_fmt != 1) { /* PCM */
+    if (audio_fmt != 1 && audio_fmt != 3) { /* PCM int16 or IEEE float */
         fclose(f);
         return TSAC_ERR_FORMAT;
     }
 
-    /* Find data chunk */
-    fseek(f, 44, SEEK_SET);
+    /* Find data chunk — start searching after fmt chunk */
+    uint32_t fmt_size = wav_hdr[16] | ((uint32_t)wav_hdr[17] << 8)
+                      | ((uint32_t)wav_hdr[18] << 16) | ((uint32_t)wav_hdr[19] << 24);
+    long data_search_start = 20 + fmt_size;
+    fseek(f, data_search_start, SEEK_SET);
     uint8_t chunk_hdr[8];
     while (fread(chunk_hdr, 1, 8, f) == 8) {
         if (memcmp(chunk_hdr, "data", 4) == 0) {

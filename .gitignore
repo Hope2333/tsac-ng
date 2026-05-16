@@ -41,3 +41,5 @@ models/
 
 # AI-LTC state (local only, not versioned)
 .ai/
+releases/*
+tests/

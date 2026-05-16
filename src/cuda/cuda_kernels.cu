@@ -84,6 +84,61 @@ __global__ void tanh_clip_kernel(float *x, int n) {
     x[i] = v;
 }
 
+__global__ void rvq_quantize_kernel(int *indices, const float *features,
+    const float *codebook, int n_frames, int rvq_dim, int entries) {
+    int f = blockIdx.x * blockDim.x + threadIdx.x;
+    if (f >= n_frames) return;
+
+    const float *feat = features + f * rvq_dim;
+    float best_dist = 1e30f;
+    int best_entry = 0;
+
+    for (int e = 0; e < entries; e++) {
+        const float *cb = codebook + e * rvq_dim;
+        float dist = 0.0f;
+        for (int d = 0; d < rvq_dim; d++) {
+            float diff = feat[d] - cb[d];
+            dist += diff * diff;
+        }
+        if (dist < best_dist) {
+            best_dist = dist;
+            best_entry = e;
+        }
+    }
+    indices[f] = best_entry;
+}
+
+__global__ void rvq_subtract_kernel(float *features, const float *codebook,
+    const int *indices, int n_frames, int rvq_dim) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = n_frames * rvq_dim;
+    if (tid >= total) return;
+    int f = tid / rvq_dim;
+    int d = tid % rvq_dim;
+    features[tid] -= codebook[indices[f] * rvq_dim + d];
+}
+
+__global__ void conv1d_strided_kernel(float *o, const float *x, const float *w, const float *b,
+    int T, int K, int Ci, int Co, int stride) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = Co * T;
+    if (tid >= total) return;
+
+    int oi = tid % T;
+    int oc = tid / T;
+    int P = K / 2;
+
+    float sum = b ? b[oc] : 0.0f;
+    for (int ic = 0; ic < Ci; ic++) {
+        for (int j = 0; j < K; j++) {
+            int ii = oi * stride + j - P;
+            if (ii >= 0 && ii < T * stride)
+                sum += x[ic * (T * stride) + ii] * w[oc * Ci * K + ic * K + j];
+        }
+    }
+    o[tid] = sum;
+}
+
 __global__ void rvq_lookup_kernel(float *features, const int *codes,
                                    const float *cb_data, const int *cb_offsets,
                                    int n_frames, int n_cb, int rvq_dim) {
@@ -198,6 +253,31 @@ cudaError_t launch_group_norm(float *d_o, const float *d_x, const float *d_w, co
 cudaError_t launch_tanh_clip(float *d_x, int n, cudaStream_t stream) {
     int grid = (n + BLK - 1) / BLK;
     tanh_clip_kernel<<<grid, BLK, 0, stream>>>(d_x, n);
+    return cudaGetLastError();
+}
+
+cudaError_t launch_rvq_quantize(int *d_indices, const float *d_features,
+    const float *d_codebook, int n_frames, int rvq_dim, int entries, cudaStream_t stream) {
+    int grid = (n_frames + BLK - 1) / BLK;
+    rvq_quantize_kernel<<<grid, BLK, 0, stream>>>(d_indices, d_features, d_codebook,
+                                                    n_frames, rvq_dim, entries);
+    return cudaGetLastError();
+}
+
+cudaError_t launch_rvq_subtract(float *d_features, const float *d_codebook,
+    const int *d_indices, int n_frames, int rvq_dim, cudaStream_t stream) {
+    int total = n_frames * rvq_dim;
+    int grid = (total + BLK - 1) / BLK;
+    rvq_subtract_kernel<<<grid, BLK, 0, stream>>>(d_features, d_codebook, d_indices,
+                                                   n_frames, rvq_dim);
+    return cudaGetLastError();
+}
+
+cudaError_t launch_conv1d_strided(float *d_o, const float *d_x, const float *d_w, const float *d_b,
+    int T_out, int K, int Ci, int Co, int T_in, int stride, cudaStream_t stream) {
+    int total = Co * T_out;
+    int grid = (total + BLK - 1) / BLK;
+    conv1d_strided_kernel<<<grid, BLK, 0, stream>>>(d_o, d_x, d_w, d_b, T_out, K, Ci, Co, stride);
     return cudaGetLastError();
 }
 
