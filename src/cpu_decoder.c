@@ -35,6 +35,191 @@
 #include "arch/arm/cpu_arm.h"
 #endif
 
+#define BATCH_FRAMES    16
+#define CONTEXT_PAD     10
+#define DEBUG_DECODER    0
+
+#if DEBUG_DECODER
+#define DBG(...) fprintf(stderr, __VA_ARGS__)
+#else
+#define DBG(...) ((void)0)
+#endif
+
+extern void conv1d_s(float*, const float*, const float*, const float*, int, int, int, int);
+extern void convt1d_s(float*, const float*, const float*, int, int, int, int, int, int);
+extern void snake_s(float*, const float*, const float*, int, int);
+
+typedef struct {
+    int oc_start, oc_end;
+    float *o;
+    const float *x, *w, *b;
+    int T, K, Ci, Co;
+    void (*kernel)(float*,const float*,const float*,const float*,int,int,int,int);
+} Conv1dJob;
+
+static void *conv1d_thread(void *arg) {
+    Conv1dJob *j = (Conv1dJob *)arg;
+    int Co_sub = j->oc_end - j->oc_start;
+    if (Co_sub <= 0) return NULL;
+    j->kernel(
+        j->o + j->oc_start * j->T,
+        j->x,
+        j->w + j->oc_start * j->Ci * j->K,
+        j->b ? j->b + j->oc_start : NULL,
+        j->T, j->K, j->Ci, Co_sub
+    );
+    return NULL;
+}
+
+/* Parallel conv1d: split output channels across threads */
+static void conv1d_parallel(void (*kern)(float*,const float*,const float*,const float*,int,int,int,int),
+                            float *o, const float *x, const float *w, const float *b,
+                            int T, int K, int Ci, int Co, int n_threads)
+{
+    if (n_threads <= 1 || Co < n_threads * 2) {
+        kern(o, x, w, b, T, K, Ci, Co);
+        return;
+    }
+    int nt = (n_threads < Co) ? n_threads : Co;
+    pthread_t *tid = (pthread_t *)alloca(nt * sizeof(pthread_t));
+    Conv1dJob jobs[nt];
+    int per = (Co + nt - 1) / nt;
+    for (int t = 0; t < nt; t++) {
+        jobs[t] = (Conv1dJob){
+            .oc_start = t * per,
+            .oc_end   = (t + 1) * per < Co ? (t + 1) * per : Co,
+            .o = o, .x = x, .w = w, .b = b,
+            .T = T, .K = K, .Ci = Ci, .Co = Co,
+            .kernel = kern
+        };
+        pthread_create(&tid[t], NULL, conv1d_thread, &jobs[t]);
+    }
+    for (int t = 0; t < nt; t++) pthread_join(tid[t], NULL);
+}
+
+/* Thread worker: conv_transpose parallel over output channels */
+typedef struct {
+    int oc_start, oc_end;
+    float *o;
+    const float *x, *w;
+    int Ti, To, K, Ci, Co, stride;
+    void (*kernel)(float*,const float*,const float*,int,int,int,int,int,int);
+} Convt1dJob;
+
+static void *convt1d_thread(void *arg) {
+    Convt1dJob *j = (Convt1dJob *)arg;
+    int Co_sub = j->oc_end - j->oc_start;
+    if (Co_sub <= 0) return NULL;
+    j->kernel(
+        j->o + j->oc_start * j->To,
+        j->x,
+        j->w + j->oc_start * j->Ci * j->K,
+        j->Ti, j->To, j->K, j->Ci, Co_sub, j->stride
+    );
+    return NULL;
+}
+
+static void convt1d_parallel(void (*kern)(float*,const float*,const float*,int,int,int,int,int,int),
+                             float *o, const float *x, const float *w,
+                             int Ti, int To, int K, int Ci, int Co, int stride, int n_threads)
+{
+    memset(o, 0, (size_t)Co * To * sizeof(float));
+    if (n_threads <= 1 || Co < n_threads * 2) {
+        kern(o, x, w, Ti, To, K, Ci, Co, stride);
+        return;
+    }
+    int nt = (n_threads < Co) ? n_threads : Co;
+    pthread_t *tid = (pthread_t *)alloca(nt * sizeof(pthread_t));
+    Convt1dJob jobs[nt];
+    int per = (Co + nt - 1) / nt;
+    for (int t = 0; t < nt; t++) {
+        jobs[t] = (Convt1dJob){
+            .oc_start = t * per,
+            .oc_end   = (t + 1) * per < Co ? (t + 1) * per : Co,
+            .o = o, .x = x, .w = w,
+            .Ti = Ti, .To = To, .K = K, .Ci = Ci, .Co = Co, .stride = stride,
+            .kernel = kern
+        };
+        pthread_create(&tid[t], NULL, convt1d_thread, &jobs[t]);
+    }
+    for (int t = 0; t < nt; t++) pthread_join(tid[t], NULL);
+}
+
+/* Thread worker: snake parallel over elements */
+typedef struct {
+    int start, end;
+    float *o;
+    const float *x, *a;
+    int C;
+} SnakeJob;
+
+static void *snake_thread(void *arg) {
+    SnakeJob *j = (SnakeJob *)arg;
+    for (int i = j->start; i < j->end; i++) {
+        float v = j->x[i], al = j->a[i % j->C];
+        if (al < 1e-6f) al = 1e-6f;
+        float sa = sinf(al * v);
+        j->o[i] = v + sa * sa / al;
+    }
+    return NULL;
+}
+
+static void snake_parallel(float *o, const float *x, const float *a, int n, int C, int n_threads) {
+    if (n_threads <= 1 || n < n_threads * 1024) {
+        snake_s(o, x, a, n, C);
+        return;
+    }
+    int nt = n_threads;
+    pthread_t *tid = (pthread_t *)alloca(nt * sizeof(pthread_t));
+    SnakeJob jobs[nt];
+    int per = (n + nt - 1) / nt;
+    for (int t = 0; t < nt; t++) {
+        jobs[t] = (SnakeJob){
+            .start = t * per,
+            .end   = (t + 1) * per < n ? (t + 1) * per : n,
+            .o = o, .x = x, .a = a, .C = C
+        };
+        pthread_create(&tid[t], NULL, snake_thread, &jobs[t]);
+    }
+    for (int t = 0; t < nt; t++) pthread_join(tid[t], NULL);
+}
+
+/* Thread worker: add parallel over elements */
+typedef struct {
+    int start, end;
+    float *o;
+    const float *x, *y;
+} AddJob;
+
+static void *add_thread(void *arg) {
+    AddJob *j = (AddJob *)arg;
+    for (int i = j->start; i < j->end; i++)
+        j->o[i] = j->x[i] + j->y[i];
+    return NULL;
+}
+
+static void add_parallel(float *o, const float *x, const float *y, int n, int n_threads) {
+    if (n_threads <= 1 || n < n_threads * 2048) {
+        for (int i = 0; i < n; i++) o[i] = x[i] + y[i];
+        return;
+    }
+    int nt = n_threads;
+    pthread_t *tid = (pthread_t *)alloca(nt * sizeof(pthread_t));
+    AddJob jobs[nt];
+    int per = (n + nt - 1) / nt;
+    for (int t = 0; t < nt; t++) {
+        jobs[t] = (AddJob){
+            .start = t * per,
+            .end   = (t + 1) * per < n ? (t + 1) * per : n,
+            .o = o, .x = x, .y = y
+        };
+        pthread_create(&tid[t], NULL, add_thread, &jobs[t]);
+    }
+    for (int t = 0; t < nt; t++) pthread_join(tid[t], NULL);
+}
+
+/* ================================================================ */
+/*  CPU feature detection                                           */
 /* ================================================================ */
 /*  CPU feature detection                                           */
 /* ================================================================ */
@@ -44,7 +229,13 @@ typedef enum { SIMD_SCALAR, SIMD_SSE42, SIMD_AVX, SIMD_AVX2, SIMD_AVX512 } SimdL
 static int cpu_has(unsigned int leaf, unsigned int reg, unsigned int bit) {
 #if X86_64
     unsigned int a, b, c, d;
-    if (!__get_cpuid(leaf, &a, &b, &c, &d)) return 0;
+    int ok;
+    if (leaf == 7) {
+        ok = __get_cpuid_count(7, 0, &a, &b, &c, &d);
+    } else {
+        ok = __get_cpuid(leaf, &a, &b, &c, &d);
+    }
+    if (!ok) return 0;
     switch (reg) {
         case 0: return (a >> bit) & 1;
         case 1: return (b >> bit) & 1;
@@ -103,27 +294,61 @@ void conv1d_s(float *o, const float *x, const float *w, const float *b,
         }
 }
 
+static void conv1d_dilated_s(float *o, const float *x, const float *w, const float *b,
+                             int T, int K, int Ci, int Co, int dilation) {
+    int P = (K/2) * dilation;
+    for (int oc = 0; oc < Co; oc++)
+        for (int oi = 0; oi < T; oi++) {
+            float s = b ? b[oc] : 0;
+            for (int ic = 0; ic < Ci; ic++)
+                for (int j = 0; j < K; j++) {
+                    int ii = oi + j*dilation - P;
+                    if (ii >= 0 && ii < T) s += x[ic*T+ii] * w[oc*Ci*K + ic*K + j];
+                }
+            o[oc*T+oi] = s;
+        }
+}
+
+static void conv1d_strided_s(float *o, const float *x, const float *w, const float *b,
+                              int T_in, int T_out, int K, int Ci, int Co, int stride) {
+    int P = K/2; memset(o, 0, (size_t)Co * T_out * sizeof(float));
+    for (int oc = 0; oc < Co; oc++)
+        for (int oi = 0; oi < T_out; oi++) {
+            float s = b ? b[oc] : 0;
+            for (int ic = 0; ic < Ci; ic++)
+                for (int j = 0; j < K; j++) {
+                    int ii = oi * stride + j - P;
+                    if (ii >= 0 && ii < T_in)
+                        s += x[ic * T_in + ii] * w[oc * Ci * K + ic * K + j];
+                }
+            o[oc * T_out + oi] = s;
+        }
+}
+
 void convt1d_s(float *o, const float *x, const float *w,
-               int Ti, int To, int K, int Ci, int Co) {
-    int P = K/2; memset(o, 0, Co*To*sizeof(float));
+               int Ti, int To, int K, int Ci, int Co, int stride) {
+    int P = K/2; memset(o, 0, (size_t)Co*To*sizeof(float));
     for (int ic = 0; ic < Ci; ic++) for (int ii = 0; ii < Ti; ii++) {
         float v = x[ic*Ti+ii]; if (v == 0) continue;
         for (int oc = 0; oc < Co; oc++) for (int j = 0; j < K; j++) {
-            int oi = ii*2 + j - P;
+            int oi = ii*stride + j - P;
             if (oi >= 0 && oi < To) o[oc*To+oi] += v * w[oc*Ci*K + ic*K + j];
         }
     }
 }
 
 void gn_s(float *o, const float *x, const float *w, const float *b,
-          int N, int G, float eps) {
-    int E = N/G;
+          int C, int T, int G, float eps) {
+    int Cg = C/G;
+    int E = Cg*T;
     for (int g = 0; g < G; g++) {
         float s = 0, sq = 0;
         for (int i = 0; i < E; i++) { float v = x[g*E+i]; s += v; sq += v*v; }
         float mn = s/E, vr = sq/E - mn*mn, is = 1.0f/sqrtf(fmaxf(vr+eps, 1e-10f));
         for (int i = 0; i < E; i++) {
-            int idx = g*E+i; o[idx] = (x[idx]-mn)*is*(w?w[g]:1)+(b?b[g]:0);
+            int idx = g*E+i;
+            int channel = g*Cg + i/T;
+            o[idx] = (x[idx]-mn)*is*(w?w[channel]:1)+(b?b[channel]:0);
         }
     }
 }
@@ -243,11 +468,10 @@ void conv1d_avx(float *o, const float *x, const float *w, const float *b,
 
 __attribute__((target("avx,fma")))
 void convt1d_avx(float *o, const float *x, const float *w,
-                 int Ti, int To, int K, int Ci, int Co) {
+                 int Ti, int To, int K, int Ci, int Co, int stride) {
     int P = K/2;
     int Co_block = Co & ~7;
     memset(o, 0, Co*To*sizeof(float));
-    
     for (int ic = 0; ic < Ci; ic++) {
         for (int ii = 0; ii < Ti; ii++) {
             float v = x[ic*Ti+ii];
@@ -258,7 +482,7 @@ void convt1d_avx(float *o, const float *x, const float *w,
             /* Vectorized loop over output channels (8 at a time) */
             for (int ocb = 0; ocb < Co_block; ocb += 8) {
                 for (int j = 0; j < K; j++) {
-                    int oi = ii*2 + j - P;
+                    int oi = ii*stride + j - P;
                     if (oi >= 0 && oi < To) {
                         /* Load 8 weights: w[ocb:ocb+8, ic, j] */
                         int w_idx = ocb * Ci * K + ic * K + j;
@@ -276,7 +500,7 @@ void convt1d_avx(float *o, const float *x, const float *w,
             /* Handle remaining channels with scalar fallback */
             for (int oc = Co_block; oc < Co; oc++) {
                 for (int j = 0; j < K; j++) {
-                    int oi = ii*2 + j - P;
+                    int oi = ii*stride + j - P;
                     if (oi >= 0 && oi < To) {
                         o[oc*To+oi] += v * w[oc*Ci*K + ic*K + j];
                     }
@@ -360,8 +584,8 @@ void conv1d_avx2(float *o, const float *x, const float *w, const float *b,
 
 __attribute__((target("avx2,fma")))
 void convt1d_avx2(float *o, const float *x, const float *w,
-                  int Ti, int To, int K, int Ci, int Co) {
-    convt1d_avx(o, x, w, Ti, To, K, Ci, Co);
+                  int Ti, int To, int K, int Ci, int Co, int stride) {
+    convt1d_avx(o, x, w, Ti, To, K, Ci, Co, stride);
 }
 
 __attribute__((target("avx2,fma")))
@@ -428,11 +652,10 @@ void conv1d_avx512(float *o, const float *x, const float *w, const float *b,
 
 __attribute__((target("avx512f")))
 void convt1d_avx512(float *o, const float *x, const float *w,
-                    int Ti, int To, int K, int Ci, int Co) {
+                    int Ti, int To, int K, int Ci, int Co, int stride) {
     int P = K/2;
     int Co_block = Co & ~15;
     memset(o, 0, Co*To*sizeof(float));
-    
     for (int ic = 0; ic < Ci; ic++) {
         for (int ii = 0; ii < Ti; ii++) {
             float v = x[ic*Ti+ii];
@@ -443,7 +666,7 @@ void convt1d_avx512(float *o, const float *x, const float *w,
             /* Vectorized loop over output channels (16 at a time) */
             for (int ocb = 0; ocb < Co_block; ocb += 16) {
                 for (int j = 0; j < K; j++) {
-                    int oi = ii*2 + j - P;
+                    int oi = ii*stride + j - P;
                     if (oi >= 0 && oi < To) {
                         /* Load 16 weights */
                         int w_idx = ocb * Ci * K + ic * K + j;
@@ -461,7 +684,7 @@ void convt1d_avx512(float *o, const float *x, const float *w,
             /* Handle remaining channels with scalar fallback */
             for (int oc = Co_block; oc < Co; oc++) {
                 for (int j = 0; j < K; j++) {
-                    int oi = ii*2 + j - P;
+                    int oi = ii*stride + j - P;
                     if (oi >= 0 && oi < To) {
                         o[oc*To+oi] += v * w[oc*Ci*K + ic*K + j];
                     }
@@ -537,8 +760,8 @@ void add_avx512(float *o, const float *x, const float *y, int n) {
 
 typedef struct {
     void (*conv1d)(float*,const float*,const float*,const float*,int,int,int,int);
-    void (*conv_transpose1d)(float*,const float*,const float*,int,int,int,int,int);
-    void (*group_norm)(float*,const float*,const float*,const float*,int,int,float);
+    void (*conv_transpose1d)(float*,const float*,const float*,int,int,int,int,int,int);
+    void (*group_norm)(float*,const float*,const float*,const float*,int,int,int,float);
     void (*snake)(float*,const float*,const float*,int,int);
     void (*add)(float*,const float*,const float*,int);
 } CPUOps;
@@ -618,8 +841,8 @@ static CPUOps get_ops(void) {
 /* ================================================================ */
 
 float *dequant_weights(const DACTensor *weight_v, const DACTensor *weight_g,
-                              const DACTensor *bias,
-                              int *out_Ci, int *out_K, int *out_Co, int *is_conv_transpose) {
+                               const DACTensor *bias,
+                               int *out_Ci, int *out_K, int *out_Co, int *is_conv_transpose) {
     if (!weight_v) return NULL;
 
     int nd = weight_v->ndims;
@@ -631,9 +854,14 @@ float *dequant_weights(const DACTensor *weight_v, const DACTensor *weight_g,
 
     int Co = bias ? bias->dims[0] : d2;
     int K = d1;
-    int Ci = (d0 == Co) ? d2 : d0;
 
-    if (is_conv_transpose) *is_conv_transpose = (d0 == Co) ? 1 : 0;
+    /* Determine layer type: conv_transpose has bias->dims[0] == weight_v->dims[0],
+     * meaning the stored layout is [Co, K, Ci] rather than [Ci, K, Co].
+     * K-based heuristic fails for encoder convs with K=4/8/16. */
+    int is_ct = (bias && bias->dims[0] == d0) ? 1 : 0;
+    int Ci = is_ct ? d2 : d0;
+
+    if (is_conv_transpose) *is_conv_transpose = is_ct;
 
     *out_Ci = Ci;
     *out_K = K;
@@ -643,47 +871,66 @@ float *dequant_weights(const DACTensor *weight_v, const DACTensor *weight_g,
     float *w_f32 = (float *)malloc(total_size * sizeof(float));
     if (!w_f32) return NULL;
 
+    int src_size = d0 * d1 * d2;
+    float *src_f32 = (float *)malloc((size_t)src_size * sizeof(float));
+    if (!src_f32) { free(w_f32); return NULL; }
+
     if (weight_v->elem_size == 4) {
-        const float *src = (const float *)weight_v->data;
-        int per_input = weight_g ? (Ci == (int)weight_g->dims[2]) : 0;
-        for (int ci = 0; ci < Ci; ci++) {
-            for (int k = 0; k < K; k++) {
-                for (int co = 0; co < Co; co++) {
-                    int src_idx = per_input
-                        ? co * K * Ci + k * Ci + ci
-                        : ci * K * Co + k * Co + co;
-                    int dst_idx = co * Ci * K + ci * K + k;
-                    w_f32[dst_idx] = src[src_idx];
-                }
-            }
+        memcpy(src_f32, weight_v->data, (size_t)src_size * sizeof(float));
+    } else if (weight_v->data_size == src_size) {
+        const uint8_t *v_data = weight_v->data;
+        for (int i = 0; i < src_size; i++) src_f32[i] = ((float)v_data[i] - 128.0f) / 127.0f;
+    } else {
+        /* LibNC q8/BF8 tensors store grouped value bytes plus one scale byte per group.
+         * The scale byte is a linear block scale centered around 127, so common bytes
+         * 127/129 keep the group near unit scale while preserving group alignment. */
+        int n_groups = weight_v->data_size - src_size;
+        if (n_groups <= 0 || src_size % n_groups != 0) {
+            free(src_f32); free(w_f32); return NULL;
         }
-        return w_f32;
+        int group_size = src_size / n_groups;
+        const uint8_t *p = weight_v->data;
+        int out = 0;
+        for (int g = 0; g < n_groups; g++) {
+            float group_scale = (float)(p[group_size] ? p[group_size] : 1) / 127.0f;
+            for (int i = 0; i < group_size; i++) {
+                src_f32[out++] = ((float)*p++ - 128.0f) * group_scale / 127.0f;
+            }
+            p++; /* grouped BF8 scale byte */
+        }
     }
 
-    if (!weight_g) { free(w_f32); return NULL; }
+    const float *g_scales = weight_g ? (const float *)weight_g->data : NULL;
+    int norm_channels = weight_g ? (int)weight_g->dims[2] : d2;
+    float *norms = (float *)calloc((size_t)norm_channels, sizeof(float));
+    if (!norms) { free(src_f32); free(w_f32); return NULL; }
 
-    int per_input = (Ci == (int)weight_g->dims[2]);
-
-    const float *g_scales = (const float *)weight_g->data;
-    const uint8_t *v_data = weight_v->data;
+    for (int i0 = 0; i0 < d0; i0++)
+        for (int k = 0; k < K; k++)
+            for (int i2 = 0; i2 < d2; i2++) {
+                int src_idx = i0 * K * d2 + k * d2 + i2;
+                float v = src_f32[src_idx];
+                if (i2 < norm_channels) norms[i2] += v * v;
+            }
+    for (int i = 0; i < norm_channels; i++) norms[i] = sqrtf(norms[i] + 1e-12f);
 
     for (int ci = 0; ci < Ci; ci++) {
-        float g = g_scales[per_input ? ci : (ci * (int)weight_g->dims[2] / Ci)];
         for (int k = 0; k < K; k++) {
             for (int co = 0; co < Co; co++) {
-                int src_idx;
-                if (per_input) {
-                    src_idx = co * K * Ci + k * Ci + ci;
-                } else {
-                    src_idx = ci * K * Co + k * Co + co;
-                }
-                int8_t v_val = (int8_t)v_data[src_idx];
-                if (!per_input) g = g_scales[co];
+                int src_idx = is_ct
+                    ? co * K * Ci + k * Ci + ci
+                    : ci * K * Co + k * Co + co;
+                int norm_idx = is_ct ? ci : co;
+                float g = weight_g ? g_scales[norm_idx] : 1.0f;
+                float n = (norm_idx < norm_channels) ? norms[norm_idx] : 1.0f;
                 int dst_idx = co * Ci * K + ci * K + k;
-                w_f32[dst_idx] = g * ((float)v_val - 128.0f) / 127.0f;
+                w_f32[dst_idx] = src_f32[src_idx] * g / n;
             }
         }
     }
+
+    free(norms);
+    free(src_f32);
 
     return w_f32;
 }
@@ -692,77 +939,81 @@ float *dequant_weights(const DACTensor *weight_v, const DACTensor *weight_g,
 /*  DAC decoder entry point                                         */
 /* ================================================================ */
 
-int cpu_decoder_run(DACTensor *ts, int nt,
-                     const int *codes, int n_frames, int n_cb,
-                     float *pcm, int n_samples, int ch)
-{
-    (void)n_samples;
-    fprintf(stderr, "[cpu_dac] SIMD=%s frames=%d cb=%d ch=%d\n",
-            cpu_simd_name(), n_frames, n_cb, ch);
+#if DEBUG_DECODER
+static int count_nan(const float *data, int n) {
+    int count = 0;
+    for (int i = 0; i < n; i++) {
+        if (isnan(data[i])) count++;
+    }
+    return count;
+}
+#endif
 
-    CPUOps ops = get_ops();
-    
-    /* Step 1: RVQ Lookup - aggregate codebook entries into features */
-    /* Output: [1024, n_frames] features */
-    float *rvq_out = (float *)calloc(1024 * n_frames, sizeof(float));
-    if (!rvq_out) return TSAC_ERR_MEMORY;
-    
+static int decode_batch(DACTensor *ts, int nt,
+                        const int *codes, int n_cb, int code_offset,
+                        int ctx_frames, int n_threads,
+                        float *pcm, int n_samples, int ch,
+                        int batch_start, int batch_frames,
+                        int total_upscale, CPUOps ops)
+{
     int rvq_dim = 1024;
+
+    /* RVQ lookup for ctx_frames starting at code_offset */
+    float *rvq_out = (float *)calloc(1024 * ctx_frames, sizeof(float));
+    if (!rvq_out) return TSAC_ERR_MEMORY;
 
     for (int cb = 0; cb < n_cb && cb < 12; cb++) {
         char cb_name[128];
         snprintf(cb_name, sizeof(cb_name),
                  "quantizer.quantizers.%d.codebook.weight", cb);
         DACTensor *codebook = tf(ts, nt, cb_name);
-        if (!codebook) {
-            fprintf(stderr, "[cpu_dac] WARNING: codebook %d not found\n", cb);
-            continue;
-        }
+        if (!codebook) continue;
 
         int entries = codebook->dims[0];
         int dim     = codebook->dims[1];
-
-        /* Codebook is raw float32 (elem_size=4) */
         const float *cb_data = (const float *)codebook->data;
 
-        for (int f = 0; f < n_frames; f++) {
-            int code_idx = f * n_cb + cb;
+        for (int f = 0; f < ctx_frames; f++) {
+            int code_idx = (code_offset + f) * n_cb + cb;
             int entry = codes[code_idx];
             if (entry < 0 || entry >= entries) entry = entry % entries;
             if (entry < 0) entry = 0;
 
             for (int d = 0; d < dim && d < rvq_dim; d++) {
-                rvq_out[d * n_frames + f] += cb_data[entry * dim + d];
+                rvq_out[d * ctx_frames + f] += cb_data[entry * dim + d];
             }
         }
     }
 
-    /* Step 2: Decoder model.0 - Conv1d(1024->1536, K=7) */
+    DBG("[DEBUG] RVQ NaN: %d/%d\n", count_nan(rvq_out, 1024*ctx_frames), 1024*ctx_frames);
+
+    /* model.0 conv1d */
     DACTensor *m0_wv = tf(ts, nt, "decoder.model.0.weight_v");
     DACTensor *m0_wg = tf(ts, nt, "decoder.model.0.weight_g");
-    DACTensor *m0_b = tf(ts, nt, "decoder.model.0.bias");
-    
+    DACTensor *m0_b  = tf(ts, nt, "decoder.model.0.bias");
+
     int m0_Ci = 1024, m0_K = 7, m0_Co = 1536;
     float *m0_w = dequant_weights(m0_wv, m0_wg, m0_b, &m0_Ci, &m0_K, &m0_Co, NULL);
     const float *m0_b_data = m0_b ? (const float *)m0_b->data : NULL;
-    
-    /* Allocate intermediate buffers */
-    float *buf0 = (float *)malloc(m0_Co * n_frames * sizeof(float));
+
+    float *buf0 = (float *)malloc((size_t)m0_Co * ctx_frames * sizeof(float));
     if (!buf0) { free(rvq_out); free(m0_w); return TSAC_ERR_MEMORY; }
-    memset(buf0, 0, m0_Co * n_frames * sizeof(float));
-    
+    memset(buf0, 0, (size_t)m0_Co * ctx_frames * sizeof(float));
+
     if (m0_w) {
-        ops.conv1d(buf0, rvq_out, m0_w, m0_b_data, n_frames, m0_K, m0_Ci, m0_Co);
+        conv1d_parallel(ops.conv1d, buf0, rvq_out, m0_w, m0_b_data,
+                        ctx_frames, m0_K, m0_Ci, m0_Co, n_threads);
     }
-    
     free(rvq_out);
     free(m0_w);
-    
-    /* Current feature map: buf0 [m0_Co, n_frames] = [1536, n_frames] */
+
+    DBG("[DEBUG] After m0 conv1d NaN: %d/%d\n", count_nan(buf0, m0_Co*ctx_frames), m0_Co*ctx_frames);
+
     float *current = buf0;
     int current_C = m0_Co;
-    
-    /* Step 3: Decoder blocks 1-4 with Snake + ConvTranspose + GroupNorm */
+    int cur_frames = ctx_frames;
+
+    /* decoder blocks 1-4 */
     for (int block = 1; block <= 4; block++) {
         int target_C;
         switch (block) {
@@ -772,49 +1023,45 @@ int cpu_decoder_run(DACTensor *ts, int nt,
             case 4: target_C = 96; break;
             default: target_C = current_C / 2;
         }
-        
-        /* Snake activation before conv */
+
+        /* snake before conv */
         char snake_name[128];
         snprintf(snake_name, sizeof(snake_name), "decoder.model.%d.block.0.alpha", block);
         DACTensor *snake_alpha = tf(ts, nt, snake_name);
-        
         if (snake_alpha) {
             const float *alpha = (const float *)snake_alpha->data;
             int alpha_C = snake_alpha->dims[0];
-            ops.snake(current, current, alpha, current_C * n_frames, alpha_C);
+            snake_parallel(current, current, alpha,
+                           current_C * cur_frames, alpha_C, n_threads);
         }
-        
-        /* ConvTranspose1d layer (upsampling factor 2) */
+
+        DBG("[DEBUG] After block%d snake NaN: %d/%d\n", block, count_nan(current, current_C*cur_frames), current_C*cur_frames);
+
+        /* conv_transpose upsampling */
         char wv_name[128], wg_name[128], b_name[128];
         snprintf(wv_name, sizeof(wv_name), "decoder.model.%d.block.1.weight_v", block);
         snprintf(wg_name, sizeof(wg_name), "decoder.model.%d.block.1.weight_g", block);
         snprintf(b_name, sizeof(b_name), "decoder.model.%d.block.1.bias", block);
-        
+
         DACTensor *wv = tf(ts, nt, wv_name);
         DACTensor *wg = tf(ts, nt, wg_name);
-        DACTensor *b = tf(ts, nt, b_name);
-        
-        int conv_Ci, conv_K, conv_Co;
-        int is_convt;
+        DACTensor *b  = tf(ts, nt, b_name);
+
+        int conv_Ci, conv_K, conv_Co, is_convt;
         float *w = dequant_weights(wv, wg, b, &conv_Ci, &conv_K, &conv_Co, &is_convt);
         const float *b_data = b ? (const float *)b->data : NULL;
-        
-        /* Output frames after upsampling */
-        int n_frames_out = n_frames * (1 << block); /* 2x, 4x, 8x, 16x */
-        
-        float *next_buf = (float *)malloc(target_C * n_frames_out * sizeof(float));
-        if (!next_buf) {
-            free(current);
-            free(w);
-            return TSAC_ERR_MEMORY;
-        }
-        
+
+        int conv_stride = conv_K / 2;
+        int n_frames_out = cur_frames * conv_stride;
+
+        float *next_buf = (float *)malloc((size_t)target_C * n_frames_out * sizeof(float));
+        if (!next_buf) { free(current); free(w); return TSAC_ERR_MEMORY; }
+
         if (w) {
-            /* Use conv_transpose1d with stride 2 for upsampling */
-                ops.conv_transpose1d(next_buf, current, w, n_frames, n_frames_out, 
-                                     conv_K, conv_Ci, conv_Co);
-                /* Add bias */
-                if (b_data) {
+            convt1d_parallel(ops.conv_transpose1d, next_buf, current, w,
+                             cur_frames, n_frames_out,
+                             conv_K, conv_Ci, conv_Co, conv_stride, n_threads);
+            if (b_data) {
                 for (int c = 0; c < conv_Co; c++) {
                     for (int t = 0; t < n_frames_out; t++) {
                         next_buf[c * n_frames_out + t] += b_data[c];
@@ -822,16 +1069,19 @@ int cpu_decoder_run(DACTensor *ts, int nt,
                 }
             }
         }
-        
+
+        DBG("[DEBUG] After block%d convt NaN: %d/%d\n", block, count_nan(next_buf, target_C*n_frames_out), target_C*n_frames_out);
+
         free(current);
         free(w);
         current = next_buf;
         current_C = target_C;
-        
-        /* Inner residual blocks (3x) */
+        cur_frames = n_frames_out;
+
+        /* DAC residual units: Snake -> dilated Conv1d(K=7) -> Snake -> Conv1d(K=1) -> skip */
         for (int inner = 2; inner <= 4; inner++) {
             char inner_snake[128], inner_wv[128], inner_wg[128], inner_b[128];
-            snprintf(inner_snake, sizeof(inner_snake), 
+            snprintf(inner_snake, sizeof(inner_snake),
                      "decoder.model.%d.block.%d.block.0.alpha", block, inner);
             snprintf(inner_wv, sizeof(inner_wv),
                      "decoder.model.%d.block.%d.block.1.weight_v", block, inner);
@@ -839,121 +1089,384 @@ int cpu_decoder_run(DACTensor *ts, int nt,
                      "decoder.model.%d.block.%d.block.1.weight_g", block, inner);
             snprintf(inner_b, sizeof(inner_b),
                      "decoder.model.%d.block.%d.block.1.bias", block, inner);
-            
+
             DACTensor *is_alpha = tf(ts, nt, inner_snake);
             DACTensor *iwv = tf(ts, nt, inner_wv);
             DACTensor *iwg = tf(ts, nt, inner_wg);
-            DACTensor *ib = tf(ts, nt, inner_b);
-            
-            float *residual = (float *)malloc(current_C * n_frames_out * sizeof(float));
+            DACTensor *ib  = tf(ts, nt, inner_b);
+
+            float *residual = (float *)malloc((size_t)current_C * cur_frames * sizeof(float));
             if (!residual) continue;
-            memcpy(residual, current, current_C * n_frames_out * sizeof(float));
-            
-            /* Snake activation */
+            memcpy(residual, current, (size_t)current_C * cur_frames * sizeof(float));
+
             if (is_alpha) {
                 const float *alpha = (const float *)is_alpha->data;
                 int alpha_C = is_alpha->dims[0];
-                ops.snake(current, current, alpha, current_C * n_frames_out, alpha_C);
+                snake_parallel(current, current, alpha,
+                               current_C * cur_frames, alpha_C, n_threads);
             }
-            
-            /* Conv1d */
-            int inner_Ci, inner_K, inner_Co;
-            float *iw = dequant_weights(iwv, iwg, ib, &inner_Ci, &inner_K, &inner_Co, NULL);
+
+            int ic_Ci, ic_K, ic_Co;
+            float *iw = dequant_weights(iwv, iwg, ib, &ic_Ci, &ic_K, &ic_Co, NULL);
             const float *ib_data = ib ? (const float *)ib->data : NULL;
-            
+
             if (iw) {
-                float *conv_out = (float *)malloc(inner_Co * n_frames_out * sizeof(float));
+                float *conv_out = (float *)malloc((size_t)ic_Co * cur_frames * sizeof(float));
                 if (conv_out) {
-                    ops.conv1d(conv_out, current, iw, ib_data, n_frames_out, inner_K, inner_Ci, inner_Co);
-                    
-                    /* Group norm */
-                    char gn_w_name[128], gn_b_name[128];
-                    snprintf(gn_w_name, sizeof(gn_w_name),
-                             "decoder.model.%d.block.%d.block.2.weight", block, inner);
-                    snprintf(gn_b_name, sizeof(gn_b_name),
-                             "decoder.model.%d.block.%d.block.2.bias", block, inner);
-                    DACTensor *gn_w = tf(ts, nt, gn_w_name);
-                    DACTensor *gn_b = tf(ts, nt, gn_b_name);
-                    
-                    if (gn_w || gn_b) {
-                        const float *gn_w_data = gn_w ? (const float *)gn_w->data : NULL;
-                        const float *gn_b_data = gn_b ? (const float *)gn_b->data : NULL;
-                        /* Assume 32 groups or fewer */
-                        int G = 32;
-                        while (inner_Co % G != 0 && G > 1) G /= 2;
-                        ops.group_norm(conv_out, conv_out, gn_w_data, gn_b_data, 
-                                       inner_Co * n_frames_out, G, 1e-5f);
+                    int dilation = (inner == 2) ? 1 : (inner == 3 ? 3 : 9);
+                    if (dilation == 1)
+                        conv1d_parallel(ops.conv1d, conv_out, current, iw, ib_data,
+                                        cur_frames, ic_K, ic_Ci, ic_Co, n_threads);
+                    else
+                        conv1d_dilated_s(conv_out, current, iw, ib_data,
+                                         cur_frames, ic_K, ic_Ci, ic_Co, dilation);
+
+                    char snake2_name[128], wv2_name[128], wg2_name[128], b2_name[128];
+                    snprintf(snake2_name, sizeof(snake2_name),
+                             "decoder.model.%d.block.%d.block.2.alpha", block, inner);
+                    snprintf(wv2_name, sizeof(wv2_name),
+                             "decoder.model.%d.block.%d.block.3.weight_v", block, inner);
+                    snprintf(wg2_name, sizeof(wg2_name),
+                             "decoder.model.%d.block.%d.block.3.weight_g", block, inner);
+                    snprintf(b2_name, sizeof(b2_name),
+                             "decoder.model.%d.block.%d.block.3.bias", block, inner);
+                    DACTensor *snake2 = tf(ts, nt, snake2_name);
+                    if (snake2) {
+                        snake_parallel(conv_out, conv_out, (const float *)snake2->data,
+                                       ic_Co * cur_frames, snake2->dims[0], n_threads);
                     }
-                    
-                    /* Add residual */
-                    if (ops.add) {
-                        ops.add(current, conv_out, residual, current_C * n_frames_out);
-                    } else {
-                        for (int i = 0; i < current_C * n_frames_out && i < inner_Co * n_frames_out; i++) {
-                            current[i] = conv_out[i] + residual[i];
+
+                    DACTensor *wv2 = tf(ts, nt, wv2_name);
+                    DACTensor *wg2 = tf(ts, nt, wg2_name);
+                    DACTensor *b2 = tf(ts, nt, b2_name);
+                    int c2_Ci, c2_K, c2_Co;
+                    float *w2 = dequant_weights(wv2, wg2, b2, &c2_Ci, &c2_K, &c2_Co, NULL);
+                    float *unit_out = conv_out;
+                    if (w2) {
+                        unit_out = (float *)malloc((size_t)c2_Co * cur_frames * sizeof(float));
+                        if (unit_out) {
+                            conv1d_parallel(ops.conv1d, unit_out, conv_out, w2,
+                                            b2 ? (const float *)b2->data : NULL,
+                                            cur_frames, c2_K, c2_Ci, c2_Co, n_threads);
+                        } else {
+                            unit_out = conv_out;
                         }
+                        free(w2);
                     }
-                    
+
+                    int n = current_C * cur_frames;
+                    if (ops.add) add_parallel(current, unit_out, residual, n, n_threads);
+                    else for (int i = 0; i < n; i++) current[i] = unit_out[i] + residual[i];
+
+                    if (unit_out != conv_out) free(unit_out);
                     free(conv_out);
                 }
                 free(iw);
             }
-            
             free(residual);
         }
     }
-    
-    /* Step 4: Decoder model.5 - Snake activation */
+
+    /* model.5 snake */
     DACTensor *m5_alpha = tf(ts, nt, "decoder.model.5.alpha");
     if (m5_alpha && current_C == 96) {
         const float *alpha = (const float *)m5_alpha->data;
-        int n_frames_16x = n_frames * 16;
         int alpha_C = m5_alpha->dims[0];
-        ops.snake(current, current, alpha, current_C * n_frames_16x, alpha_C);
+        snake_parallel(current, current, alpha,
+                       current_C * cur_frames, alpha_C, n_threads);
     }
-    
-    /* Step 5: Decoder model.6 - Conv1d(96->2, K=7) - output layer */
+
+    /* model.6 output conv1d */
     DACTensor *m6_wv = tf(ts, nt, "decoder.model.6.weight_v");
     DACTensor *m6_wg = tf(ts, nt, "decoder.model.6.weight_g");
-    DACTensor *m6_b = tf(ts, nt, "decoder.model.6.bias");
-    
+    DACTensor *m6_b  = tf(ts, nt, "decoder.model.6.bias");
+
     int m6_Ci, m6_K, m6_Co;
     float *m6_w = dequant_weights(m6_wv, m6_wg, m6_b, &m6_Ci, &m6_K, &m6_Co, NULL);
-    
     const float *m6_b_data = m6_b ? (const float *)m6_b->data : NULL;
-    
-    int n_frames_final = n_frames * 16;
-    float *output = (float *)malloc(2 * n_frames_final * sizeof(float));
-    
+
+    DBG("[DEBUG] m6: Ci=%d, K=%d, Co=%d, cur_frames=%d\n", m6_Ci, m6_K, m6_Co, cur_frames);
+
+    float *output = (float *)malloc((size_t)m6_Co * cur_frames * sizeof(float));
+
     if (m6_w && output) {
-        ops.conv1d(output, current, m6_w, m6_b_data, n_frames_final, m6_K, m6_Ci, m6_Co);
-        
-        /* Copy to output PCM buffer */
-        /* Output format: [ch, n_samples] interleaved or planar */
-        int samples_to_copy = n_frames_final;
-        if (samples_to_copy > n_samples) samples_to_copy = n_samples;
-        
+        ops.conv1d(output, current, m6_w, m6_b_data,
+                   cur_frames, m6_K, m6_Ci, m6_Co);
+
+        DBG("[DEBUG] After m6 conv1d NaN: %d/%d\n", count_nan(output, m6_Co*cur_frames), m6_Co*cur_frames);
+
+        /* Compute how many output samples to discard from the beginning
+         * due to context padding. code_offset is the start of the context
+         * window, batch_start is the start of the actual batch data. */
+        int discard_frames = batch_start - code_offset;
+        if (discard_frames < 0) discard_frames = 0;
+        int discard_samples = discard_frames * total_upscale;
+
+        int out_start = batch_start * total_upscale;
+        int out_count = batch_frames * total_upscale;
+
+        /* Bounds check: ensure we don't read past output buffer */
+        int max_s = cur_frames - discard_samples;
+        if (max_s > out_count) max_s = out_count;
+        if (max_s < 0) max_s = 0;
+
+        int clipped = 0;
         for (int c = 0; c < ch && c < m6_Co; c++) {
-            for (int s = 0; s < samples_to_copy; s++) {
-                float val = output[c * n_frames_final + s];
-                /* Apply tanh soft clipping */
-                if (val > 1.0f) val = tanhf(val);
-                if (val < -1.0f) val = tanhf(val);
-                pcm[c * n_samples + s] = val;
+            for (int s = 0; s < max_s; s++) {
+                int final_s = out_start + s;
+                if (final_s >= n_samples) break;
+                float val = tanhf(output[c * cur_frames + discard_samples + s]);
+                if (val > 1.0f) { val = 1.0f; clipped++; }
+                if (val < -1.0f) { val = -1.0f; clipped++; }
+                pcm[c * n_samples + final_s] = val;
             }
         }
-        
-        /* Fill remaining samples with zeros */
-        for (int c = 0; c < ch; c++) {
-            for (int s = samples_to_copy; s < n_samples; s++) {
-                pcm[c * n_samples + s] = 0.0f;
-            }
-        }
+        DBG("[DEBUG] Clipped samples: %d/%d\n", clipped, max_s * ch);
     }
-    
+
     free(current);
     free(m6_w);
     free(output);
-    
+    return TSAC_OK;
+}
+
+int cpu_decoder_run(DACTensor *ts, int nt,
+                     const int *codes, int n_frames, int n_cb,
+                     float *pcm, int n_samples, int ch,
+                     int n_threads)
+{
+    (void)n_samples;
+    int total_batches = (n_frames + BATCH_FRAMES - 1) / BATCH_FRAMES;
+    fprintf(stderr, "[cpu_dac] SIMD=%s frames=%d cb=%d ch=%d threads=%d\n",
+            cpu_simd_name(), n_frames, n_cb, ch, n_threads);
+    fprintf(stderr, "batch_size=%d bs=%d n_cb=%d block_len=%d\n",
+            BATCH_FRAMES, 1, n_cb, total_batches);
+
+    CPUOps ops = get_ops();
+
+    int total_upscale = 1;
+    for (int block = 1; block <= 4; block++) {
+        char wv_name[128];
+        snprintf(wv_name, sizeof(wv_name), "decoder.model.%d.block.1.weight_v", block);
+        DACTensor *wv = tf(ts, nt, wv_name);
+        if (wv && wv->ndims >= 2) {
+            int K = wv->dims[1];
+            total_upscale *= (K / 2);
+        }
+    }
+
+    int processed_frames = 0;
+    int batch_idx = 0;
+
+    for (int batch_start = 0; batch_start < n_frames; batch_start += BATCH_FRAMES) {
+        int batch_end = batch_start + BATCH_FRAMES;
+        if (batch_end > n_frames) batch_end = n_frames;
+        int batch_frames = batch_end - batch_start;
+        batch_idx++;
+
+        int ctx_start = batch_start - CONTEXT_PAD;
+        if (ctx_start < 0) ctx_start = 0;
+        int ctx_end = batch_end + CONTEXT_PAD;
+        if (ctx_end > n_frames) ctx_end = n_frames;
+        int ctx_frames = ctx_end - ctx_start;
+
+        int ret = decode_batch(ts, nt, codes, n_cb, ctx_start,
+                               ctx_frames, n_threads,
+                               pcm, n_samples, ch,
+                               batch_start, batch_frames, total_upscale, ops);
+        if (ret != TSAC_OK) return ret;
+
+        processed_frames += batch_frames;
+        int pct = (int)((float)batch_idx / (float)total_batches * 100.0f);
+        if (pct > 100) pct = 100;
+        fprintf(stderr, "%3u%%\r", pct);
+        fflush(stderr);
+    }
+    fprintf(stderr, "\n");
+
+    return TSAC_OK;
+}
+
+/* ================================================================ */
+/*  CPU Encoder                                                      */
+/* ================================================================ */
+
+int cpu_encoder_run(DACTensor *ts, int nt,
+                    const float *pcm, int n_samples, int channels,
+                    int n_codebooks, int block_len,
+                    int **codebook_indices, int *n_frames) {
+    int nf = (n_samples + block_len - 1) / block_len;
+    if (nf < 1) nf = 1;
+    *n_frames = nf;
+
+    CPUOps ops = get_ops();
+    int rvq_dim = 1024;
+
+    int padded_samples = nf * block_len;
+    float *padded = (float *)calloc((size_t)padded_samples * channels, sizeof(float));
+    if (!padded) return TSAC_ERR_MEMORY;
+    memcpy(padded, pcm, (size_t)n_samples * channels * sizeof(float));
+
+    fprintf(stderr, "[cpu_enc] frames=%d cb=%d ch=%d blk=%d\n", nf, n_codebooks, channels, block_len);
+    fprintf(stderr, "batch_size=%d bs=%d n_cb=%d block_len=%d\n", 1, 1, n_codebooks, nf);
+
+    /* Encoder tensor naming: encoder.block.X (NOT encoder.model.X).
+     * Internal block mapping differs from decoder:
+     *   block.3.alpha = snake before conv  (we call block.0)
+     *   block.4.*     = conv_transpose      (we call block.1)
+     *   block.{0,1,2}.block.* = inner residual units (we call inner={2,3,4}) */
+    DACTensor *e6_wv = tf(ts, nt, "encoder.block.0.weight_v");
+    DACTensor *e6_wg = tf(ts, nt, "encoder.block.0.weight_g");
+    DACTensor *e6_b  = tf(ts, nt, "encoder.block.0.bias");
+    int e6_Ci, e6_K, e6_Co;
+    float *e6_w = dequant_weights(e6_wv, e6_wg, e6_b, &e6_Ci, &e6_K, &e6_Co, NULL);
+    const float *e6_b_data = e6_b ? (const float *)e6_b->data : NULL;
+    int blk_T = block_len; /* temporal dimension: process all block samples through encoder */
+
+    /* Allocate per-block feature buffer and per-frame output */
+    float *features = (float *)calloc((size_t)rvq_dim * nf, sizeof(float));
+    if (!features) { free(padded); free(e6_w); return TSAC_ERR_MEMORY; }
+
+    if (!e6_w) { free(padded); free(e6_w); free(features); return TSAC_ERR_MEMORY; }
+
+    /* Process each block independently through full encoder, keeping temporal
+     * context (block_len time steps) throughout all layers. Only reduce to
+     * a single feature vector at the output via center-frame selection. */
+    float *blk_in  = (float *)malloc((size_t)e6_Ci * blk_T * sizeof(float));
+    if (!blk_in) { free(padded); free(e6_w); free(features); return TSAC_ERR_MEMORY; }
+
+    for (int f = 0; f < nf; f++) {
+        int start = f * block_len;
+        for (int t = 0; t < blk_T; t++) {
+            for (int c = 0; c < e6_Ci; c++) {
+                int si = start + t;
+                int src_c = (c < channels) ? c : 0;
+                blk_in[c * blk_T + t] = (si < padded_samples)
+                    ? padded[si * channels + src_c] : 0.0f;
+            }
+        }
+
+        /* model.6: Conv1d(ch→64, K=7) over block_len samples */
+        float *cur = (float *)malloc((size_t)e6_Co * blk_T * sizeof(float));
+        conv1d_s(cur, blk_in, e6_w, e6_b_data, blk_T, e6_K, e6_Ci, e6_Co);
+        int cur_C = e6_Co;
+        int cur_T = blk_T;
+
+        /* Blocks 4→1: strided convs for temporal reduction */
+        int enc_c_out[4] = {128, 256, 512, 1024};
+        int strides[4] = {8, 4, 4, 2}; /* K/2-based strides: 320→40→10→2→1 */
+        for (int blk = 4; blk >= 1; blk--) {
+            int idx = 4 - blk;
+            int stride = strides[idx];
+            int nxt_T = (cur_T + stride - 1) / stride;
+
+            /* Snake before conv */
+            char sn[128]; snprintf(sn, sizeof(sn), "encoder.block.%d.block.3.alpha", blk);
+            DACTensor *sa = tf(ts, nt, sn);
+            if (sa) snake_s(cur, cur, (const float *)sa->data, cur_C * cur_T, sa->dims[0]);
+
+            /* Strided conv1d for channel expansion + temporal reduction */
+            char wvn[128]; snprintf(wvn, sizeof(wvn), "encoder.block.%d.block.4.weight_v", blk);
+            char wgn[128]; snprintf(wgn, sizeof(wgn), "encoder.block.%d.block.4.weight_g", blk);
+            char bn[128];  snprintf(bn, sizeof(bn), "encoder.block.%d.block.4.bias", blk);
+            DACTensor *wv = tf(ts, nt, wvn), *wg = tf(ts, nt, wgn), *b = tf(ts, nt, bn);
+            int c_Ci, c_K, c_Co;
+            float *cw = dequant_weights(wv, wg, b, &c_Ci, &c_K, &c_Co, NULL);
+            float *nxt = (float *)malloc((size_t)enc_c_out[idx] * nxt_T * sizeof(float));
+            if (cw && c_Ci <= cur_C)
+                conv1d_strided_s(nxt, cur, cw, b?(const float*)b->data:NULL, cur_T, nxt_T, c_K, c_Ci, c_Co, stride);
+            free(cur); free(cw); cur = nxt; cur_C = enc_c_out[idx]; cur_T = nxt_T;
+
+            /* Inner residual units on reduced temporal dimension */
+            for (int inner = 2; inner <= 4; inner++) {
+                int io = inner - 2;
+                char isn[128]; snprintf(isn, sizeof(isn), "encoder.block.%d.block.%d.block.0.alpha", blk, io);
+                DACTensor *isa = tf(ts, nt, isn);
+                float *res = (float *)malloc((size_t)cur_C * cur_T * sizeof(float));
+                if (!res) continue;
+                memcpy(res, cur, (size_t)cur_C * cur_T * sizeof(float));
+                if (isa) snake_s(cur, cur, (const float *)isa->data, cur_C * cur_T, isa->dims[0]);
+                char iwn[128]; snprintf(iwn, sizeof(iwn), "encoder.block.%d.block.%d.block.1.weight_v", blk, io);
+                char igw[128]; snprintf(igw, sizeof(igw), "encoder.block.%d.block.%d.block.1.weight_g", blk, io);
+                char ibn[128]; snprintf(ibn, sizeof(ibn), "encoder.block.%d.block.%d.block.1.bias", blk, io);
+                DACTensor *iwv = tf(ts, nt, iwn), *iwg = tf(ts, nt, igw), *ib = tf(ts, nt, ibn);
+                int ic_Ci, ic_K, ic_Co;
+                float *iw = dequant_weights(iwv, iwg, ib, &ic_Ci, &ic_K, &ic_Co, NULL);
+                if (!iw) { free(res); continue; }
+                float *co = (float *)malloc((size_t)ic_Co * cur_T * sizeof(float));
+                if (co) {
+                    conv1d_s(co, cur, iw, ib?(const float*)ib->data:NULL, cur_T, ic_K, ic_Ci, ic_Co);
+                    char s2n[128]; snprintf(s2n, sizeof(s2n), "encoder.block.%d.block.%d.block.2.alpha", blk, io);
+                    DACTensor *s2a = tf(ts, nt, s2n);
+                    if (s2a) snake_s(co, co, (const float *)s2a->data, ic_Co * cur_T, s2a->dims[0]);
+                    char w2n[128]; snprintf(w2n, sizeof(w2n), "encoder.block.%d.block.%d.block.3.weight_v", blk, io);
+                    char g2n[128]; snprintf(g2n, sizeof(g2n), "encoder.block.%d.block.%d.block.3.weight_g", blk, io);
+                    char b2n[128]; snprintf(b2n, sizeof(b2n), "encoder.block.%d.block.%d.block.3.bias", blk, io);
+                    DACTensor *w2v=tf(ts,nt,w2n),*w2g=tf(ts,nt,g2n),*b2=tf(ts,nt,b2n);
+                    int c2_Ci,c2_K,c2_Co; float *w2=dequant_weights(w2v,w2g,b2,&c2_Ci,&c2_K,&c2_Co,NULL);
+                    float *uo=co;
+                    if(w2){uo=(float*)malloc((size_t)c2_Co*cur_T*sizeof(float));
+                     if(uo)conv1d_s(uo,co,w2,b2?(const float*)b2->data:NULL,cur_T,c2_K,c2_Ci,c2_Co);
+                     else uo=co; free(w2);}
+                    int nn=cur_C*cur_T;
+                    for(int i=0;i<nn;i++)cur[i]=uo[i]+res[i];
+                    if(uo!=co)free(uo); free(co);
+                }
+                free(iw); free(res);
+            }
+        }
+
+        /* model.5 snake + feature extraction (cur_T should be ~1 after strides) */
+        DACTensor *e5_a = tf(ts, nt, "encoder.block.5.alpha");
+        if (e5_a) snake_s(cur, cur, (const float *)e5_a->data, cur_C * cur_T, e5_a->dims[0]);
+
+        /* Take center frame as single feature vector per block */
+        int center = cur_T / 2;
+         for (int d = 0; d < rvq_dim && d < cur_C; d++)
+            features[d * nf + f] = cur[d * cur_T + center];
+        free(cur);
+        int pct = (int)((float)(f + 1) / (float)nf * 100.0f);
+        if (pct > 100) pct = 100;
+        fprintf(stderr, "%3u%%\r", pct);
+        fflush(stderr);
+    }
+    fprintf(stderr, "\n");
+    free(blk_in); free(padded); free(e6_w);
+
+    /* RVQ quantization on [rvq_dim, nf] features */
+
+    /* RVQ quantization */
+    int *indices = (int *)calloc((size_t)nf * n_codebooks, sizeof(int));
+    if (!indices) { free(features); return TSAC_ERR_MEMORY; }
+    float *residual_buf = (float *)malloc((size_t)rvq_dim * nf * sizeof(float));
+    if (!residual_buf) { free(indices); free(features); return TSAC_ERR_MEMORY; }
+    memcpy(residual_buf, features, (size_t)rvq_dim * nf * sizeof(float));
+
+    for (int cb = 0; cb < n_codebooks && cb < 12; cb++) {
+        char cb_name[128];
+        snprintf(cb_name, sizeof(cb_name), "quantizer.quantizers.%d.codebook.weight", cb);
+        DACTensor *codebook = tf(ts, nt, cb_name);
+        if (!codebook) continue;
+        int entries = codebook->dims[0];
+        const float *cb_data = (const float *)codebook->data;
+        for (int f = 0; f < nf; f++) {
+            float best = 1e30f; int best_e = 0;
+            for (int e = 0; e < entries; e++) {
+                float d = 0;
+                const float *c = cb_data + e * rvq_dim;
+                for (int i = 0; i < rvq_dim; i++) {
+                    float df = residual_buf[i * nf + f] - c[i];
+                    d += df * df;
+                }
+                if (d < best) { best = d; best_e = e; }
+            }
+            indices[f * n_codebooks + cb] = best_e;
+            const float *ch = cb_data + best_e * rvq_dim;
+            for (int i = 0; i < rvq_dim; i++)
+                residual_buf[i * nf + f] -= ch[i];
+        }
+    }
+    free(features); free(residual_buf);
+    *codebook_indices = indices;
     return TSAC_OK;
 }

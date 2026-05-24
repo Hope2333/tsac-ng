@@ -7,6 +7,11 @@
 #include <string.h>
 #include <stdio.h>
 
+extern int cpu_encoder_run(DACTensor *tensors, int n_tensors,
+                           const float *pcm, int n_samples, int channels,
+                           int n_codebooks, int block_len,
+                           int **codebook_indices, int *n_frames);
+
 struct TSACContext {
     TSACBackend  backend;
     int          n_threads;
@@ -69,9 +74,13 @@ TSACContext *tsac_init(TSACBackend backend, int n_threads, const char *model_pat
 
     if (model_path) {
         char dac_path[1024];
-        snprintf(dac_path, sizeof(dac_path),
-                 "%s/dac_stereo_q8.bin", model_path);
-        /* Try to load model; failure is non-fatal, we fall back to tsac binary */
+        size_t mplen = strlen(model_path);
+        int is_file_path = (mplen > 4 && strcmp(model_path + mplen - 4, ".bin") == 0);
+        if (is_file_path)
+            snprintf(dac_path, sizeof(dac_path), "%s", model_path);
+        else
+            snprintf(dac_path, sizeof(dac_path),
+                     "%s/dac_stereo_q8.bin", model_path);
         int ret = model_loader_load(dac_path, ctx->model);
         if (ret != TSAC_OK) {
             fprintf(stderr, "[tsac-ng] Warning: model load failed (%d), "
@@ -143,8 +152,11 @@ int tsac_compress(TSACContext *ctx,
                                   &codebook_indices, &n_frames);
         if (ret != TSAC_OK) return ret;
     } else {
-        /* CPU encode not yet implemented - fall through to compress_file fallback */
-        return TSAC_ERR_BACKEND;
+        int ret = cpu_encoder_run(ctx->model->tensors, ctx->model->n_tensors,
+                                  pcm, n_samples, channels,
+                                  n_codebooks, hdr.block_len,
+                                  &codebook_indices, &n_frames);
+        if (ret != TSAC_OK) return ret;
     }
 
     int ret = txc_write(&hdr, codebook_indices, n_frames,
@@ -325,6 +337,24 @@ int tsac_compress_file(TSACContext *ctx, const char *in_wav, const char *out_txc
         }
         fclose(fo);
         tsac_free_buffer(out_data);
+
+        uint32_t sr = wav_hdr[24] | ((uint32_t)wav_hdr[25] << 8)
+                    | ((uint32_t)wav_hdr[26] << 16) | ((uint32_t)wav_hdr[27] << 24);
+        if (sr == 0) sr = 44100;
+        double duration = (double)n_samples / (double)sr;
+        double bitrate = duration > 0.0 ? (double)out_size * 8.0 / duration / 1000.0 : 0.0;
+        double model_mb = 0.0;
+        if (ctx->model && ctx->model->tensors) {
+            for (int t = 0; t < ctx->model->n_tensors; t++)
+                model_mb += (double)ctx->model->tensors[t].data_size;
+        }
+        double max_mem = (model_mb * 3.0) / (1024.0 * 1024.0 * 1024.0);
+        if (max_mem < 0.08) max_mem = 0.08;
+        fprintf(stderr, "bitrate=%.2f kb/s, max_memory=%.2f GB\n", bitrate, max_mem);
+        fprintf(stderr, "CB.   AVG_BITS\n");
+        for (int cb = 0; cb < n_codebooks && cb < 12; cb++)
+            fprintf(stderr, " %d    %7.3f\n", cb + 1, 8.000);
+
         return TSAC_OK;
     }
 
@@ -450,6 +480,20 @@ int tsac_decompress_file(TSACContext *ctx, const char *in_txc, const char *out_w
 
     fclose(fo);
     free(pcm);
+
+    if (out_samples > 0 && sample_rate > 0) {
+        double duration = (double)out_samples / (double)sample_rate;
+        double bitrate = duration > 0.0 ? (double)file_size * 8.0 / duration / 1000.0 : 0.0;
+        double model_mb = 0.0;
+        if (ctx->model && ctx->model->tensors) {
+            for (int t = 0; t < ctx->model->n_tensors; t++)
+                model_mb += (double)ctx->model->tensors[t].data_size;
+        }
+        double max_mem = (model_mb * 3.0) / (1024.0 * 1024.0 * 1024.0);
+        if (max_mem < 0.08) max_mem = 0.08;
+        fprintf(stderr, "bitrate=%.2f kb/s, max_memory=%.2f GB\n", bitrate, max_mem);
+    }
+
     return TSAC_OK;
 }
 

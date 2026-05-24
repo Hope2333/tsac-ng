@@ -13,9 +13,10 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "riscv64")
     # For RVV support, add -march=rv64gcv (requires RVV-capable toolchain)
     add_compile_options(-O3)
 else()
-    # x86-64 default — AVX+FMA baseline (Sandy Bridge 2011+)
+    # x86-64 — enable all SIMD levels for runtime dispatch
+    # AVX2 + AVX-512F/VL/BW compiled in, selected at runtime via CPUID
     set(ARCH_X86_64 ON)
-    add_compile_options(-O3 -ffast-math -mavx -mfma)
+    add_compile_options(-O3 -ffast-math -mavx2 -mfma -mavx512f -mavx512vl -mavx512bw)
 endif()
 
 # ============================================================
@@ -44,6 +45,7 @@ set(TSAC_SOURCES
     src/txc_format.c
     src/model_loader.c
     src/cpu_decoder.c
+    src/range_coder.c
 )
 
 # Architecture-specific CPU sources
@@ -74,6 +76,7 @@ set(TSAC_HEADERS
     src/txc_format.h
     src/dac_model.h
     src/model_loader.h
+    src/range_coder.h
     src/cuda/nc_kernels.h
 )
 

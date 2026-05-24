@@ -1,44 +1,98 @@
 /*
  * txc_format.c — .txc container parser (original TSAC format)
  *
- * Real format reverse-engineered from binary analysis:
+ * Verified format (int16 encoding variant):
  *   Offset  Description
  *   ------  -----------
  *   0-3     "FBAZ" magic (ASCII)
  *   4-5     version (BE u16)
- *   6       flags (u8): bit0=stereo, other bits=encoding mode
+ *   6       flags (u8): bit0=stereo
  *   7       n_codebooks (u8): 1-12
- *   8-11    parameter u32 BE (sample count or frame reference)
- *   12-15   parameter u32 BE (additional metadata)
- *   16+     optional extended header fields
- *   ?+      uint8 codebook_indices[n_frames * n_codebooks]
+ *   8-11    param1 u32 BE (batch_size * block_len)
+ *   12-15   param2 u32 BE
+ *   16-19   param3 u32 BE
+ *   20-23   param4 u32 BE (possibly sample_rate LE)
+ *   24+     int16 codebook_indices[n_frames * n_codebooks]
  *
- * Header end is auto-detected: the first offset after byte 7 where
- * (file_size - offset) is evenly divisible by n_codebooks.
- * Each codebook index occupies 1 byte (uint8, codebook size 256).
- *
- * n_frames = (file_size - header_end) / n_codebooks
+ * Fallback (uint8 encoding):
+ *   Header end auto-detected. Each index occupies 1 byte.
  */
 #include "txc_format.h"
+#include "range_coder.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 
 #define TXC_MAGIC_BYTES { 'F', 'B', 'A', 'Z' }
 
-static int find_header_end(const uint8_t *data, size_t data_size, int n_codebooks)
-{
-    /* Minimum header: magic(4) + version(2) + flags(1) + n_codebooks(1) = 8 */
-    int min_header = 8;
+/* CRC-32 lookup table (polynomial 0x04C11DB7, big-endian non-reflected),
+ * reverse-engineered from original tsac binary at address 0x43dda0. */
+static const uint32_t crc32_table[256] = {
+    0x00000000, 0x04C11DB7, 0x09823B6E, 0x0D4326D9, 0x130476DC, 0x17C56B6B, 0x1A864DB2, 0x1E475005,
+    0x2608EDB8, 0x22C9F00F, 0x2F8AD6D6, 0x2B4BCB61, 0x350C9B64, 0x31CD86D3, 0x3C8EA00A, 0x384FBDBD,
+    0x4C11DB70, 0x48D0C6C7, 0x4593E01E, 0x4152FDA9, 0x5F15ADAC, 0x5BD4B01B, 0x569796C2, 0x52568B75,
+    0x6A1936C8, 0x6ED82B7F, 0x639B0DA6, 0x675A1011, 0x791D4014, 0x7DDC5DA3, 0x709F7B7A, 0x745E66CD,
+    0x9823B6E0, 0x9CE2AB57, 0x91A18D8E, 0x95609039, 0x8B27C03C, 0x8FE6DD8B, 0x82A5FB52, 0x8664E6E5,
+    0xBE2B5B58, 0xBAEA46EF, 0xB7A96036, 0xB3687D81, 0xAD2F2D84, 0xA9EE3033, 0xA4AD16EA, 0xA06C0B5D,
+    0xD4326D90, 0xD0F37027, 0xDDB056FE, 0xD9714B49, 0xC7361B4C, 0xC3F706FB, 0xCEB42022, 0xCA753D95,
+    0xF23A8028, 0xF6FB9D9F, 0xFBB8BB46, 0xFF79A6F1, 0xE13EF6F4, 0xE5FFEB43, 0xE8BCCD9A, 0xEC7DD02D,
+    0x34867077, 0x30476DC0, 0x3D044B19, 0x39C556AE, 0x278206AB, 0x23431B1C, 0x2E003DC5, 0x2AC12072,
+    0x128E9DCF, 0x164F8078, 0x1B0CA6A1, 0x1FCDBB16, 0x018AEB13, 0x054BF6A4, 0x0808D07D, 0x0CC9CDCA,
+    0x7897AB07, 0x7C56B6B0, 0x71159069, 0x75D48DDE, 0x6B93DDDB, 0x6F52C06C, 0x6211E6B5, 0x66D0FB02,
+    0x5E9F46BF, 0x5A5E5B08, 0x571D7DD1, 0x53DC6066, 0x4D9B3063, 0x495A2DD4, 0x44190B0D, 0x40D816BA,
+    0xACA5C697, 0xA864DB20, 0xA527FDF9, 0xA1E6E04E, 0xBFA1B04B, 0xBB60ADFC, 0xB6238B25, 0xB2E29692,
+    0x8AAD2B2F, 0x8E6C3698, 0x832F1041, 0x87EE0DF6, 0x99A95DF3, 0x9D684044, 0x902B669D, 0x94EA7B2A,
+    0xE0B41DE7, 0xE4750050, 0xE9362689, 0xEDF73B3E, 0xF3B06B3B, 0xF771768C, 0xFA325055, 0xFEF34DE2,
+    0xC6BCF05F, 0xC27DEDE8, 0xCF3ECB31, 0xCBFFD686, 0xD5B88683, 0xD1799B34, 0xDC3ABDED, 0xD8FBA05A,
+    0x690CE0EE, 0x6DCDFD59, 0x608EDB80, 0x644FC637, 0x7A089632, 0x7EC98B85, 0x738AAD5C, 0x774BB0EB,
+    0x4F040D56, 0x4BC510E1, 0x46863638, 0x42472B8F, 0x5C007B8A, 0x58C1663D, 0x558240E4, 0x51435D53,
+    0x251D3B9E, 0x21DC2629, 0x2C9F00F0, 0x285E1D47, 0x36194D42, 0x32D850F5, 0x3F9B762C, 0x3B5A6B9B,
+    0x0315D626, 0x07D4CB91, 0x0A97ED48, 0x0E56F0FF, 0x1011A0FA, 0x14D0BD4D, 0x19939B94, 0x1D528623,
+    0xF12F560E, 0xF5EE4BB9, 0xF8AD6D60, 0xFC6C70D7, 0xE22B20D2, 0xE6EA3D65, 0xEBA91BBC, 0xEF68060B,
+    0xD727BBB6, 0xD3E6A601, 0xDEA580D8, 0xDA649D6F, 0xC423CD6A, 0xC0E2D0DD, 0xCDA1F604, 0xC960EBB3,
+    0xBD3E8D7E, 0xB9FF90C9, 0xB4BCB610, 0xB07DABA7, 0xAE3AFBA2, 0xAAFBE615, 0xA7B8C0CC, 0xA379DD7B,
+    0x9B3660C6, 0x9FF77D71, 0x92B45BA8, 0x9675461F, 0x8832161A, 0x8CF30BAD, 0x81B02D74, 0x857130C3,
+    0x5D8A9099, 0x594B8D2E, 0x5408ABF7, 0x50C9B640, 0x4E8EE645, 0x4A4FFBF2, 0x470CDD2B, 0x43CDC09C,
+    0x7B827D21, 0x7F436096, 0x7200464F, 0x76C15BF8, 0x68860BFD, 0x6C47164A, 0x61043093, 0x65C52D24,
+    0x119B4BE9, 0x155A565E, 0x18197087, 0x1CD86D30, 0x029F3D35, 0x065E2082, 0x0B1D065B, 0x0FDC1BEC,
+    0x3793A651, 0x3352BBE6, 0x3E119D3F, 0x3AD08088, 0x2497D08D, 0x2056CD3A, 0x2D15EBE3, 0x29D4F654,
+    0xC5A92679, 0xC1683BCE, 0xCC2B1D17, 0xC8EA00A0, 0xD6AD50A5, 0xD26C4D12, 0xDF2F6BCB, 0xDBEE767C,
+    0xE3A1CBC1, 0xE760D676, 0xEA23F0AF, 0xEEE2ED18, 0xF0A5BD1D, 0xF464A0AA, 0xF9278673, 0xFDE69BC4,
+    0x89B8FD09, 0x8D79E0BE, 0x803AC667, 0x84FBDBD0, 0x9ABC8BD5, 0x9E7D9662, 0x933EB0BB, 0x97FFAD0C,
+    0xAFB010B1, 0xAB710D06, 0xA6322BDF, 0xA2F33668, 0xBCB4666D, 0xB8757BDA, 0xB5365D03, 0xB1F740B4
+};
 
-    /* Scan forward until the remaining data is evenly divisible by n_codebooks.
-     * This handles both 17-byte and 24-byte header variants. */
-    for (int h = min_header; h < (int)data_size && h < 256; h++) {
+static uint32_t crc32(const uint8_t *data, size_t len, uint32_t crc) {
+    for (size_t i = 0; i < len; i++) {
+        uint8_t idx = (uint8_t)(crc >> 24) ^ data[i];
+        crc = (crc << 8) ^ crc32_table[idx];
+    }
+    return crc;
+}
+
+static uint32_t read_be32(const uint8_t *p)
+{
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
+           ((uint32_t)p[2] << 8) | (uint32_t)p[3];
+}
+
+static int find_header_end_int16(const uint8_t *data, size_t data_size, int n_codebooks)
+{
+    int stride = n_codebooks * 2;
+    for (int h = 16; h < 256 && h < (int)data_size; h++) {
+        if ((data_size - (size_t)h) % (size_t)stride == 0)
+            return h;
+    }
+    return 0;
+}
+
+static int find_header_end_uint8(const uint8_t *data, size_t data_size, int n_codebooks)
+{
+    for (int h = 8; h < 256 && h < (int)data_size; h++) {
         if ((data_size - (size_t)h) % (size_t)n_codebooks == 0)
             return h;
     }
-    /* Fallback: use min_header */
-    return min_header;
+    return 8;
 }
 
 void txc_header_init(TSCHeader *hdr, int stereo, int n_codebooks, int sample_rate)
@@ -117,63 +171,200 @@ int txc_read(const uint8_t *data, size_t data_size,
 
     uint16_t ver_be = (uint16_t)((data[4] << 8) | data[5]);
     uint16_t ver_le = (uint16_t)(data[4] | (data[5] << 8));
-    hdr->version = (ver_be >= 1 && ver_be <= 255) ? ver_be : ver_le;
+    hdr->version = (ver_be <= 255) ? ver_be : ver_le;
 
-    if (hdr->version < 1 || hdr->version > 255)
+    if (hdr->version > 255)
         return TSAC_ERR_FORMAT;
 
     hdr->flags       = data[6];
     hdr->n_codebooks = data[7];
-    hdr->sample_rate = 48000; /* default, overridden if available */
+    hdr->sample_rate = 44100;
 
     if (hdr->n_codebooks < 1 || hdr->n_codebooks > 12)
         return TSAC_ERR_FORMAT;
 
-    /* Parse optional fields at offset 8-15 if present */
-    if (data_size >= 12) {
-        uint32_t p1, p2;
-        p1 = ((uint32_t)data[ 8] << 24) | ((uint32_t)data[ 9] << 16)
-           | ((uint32_t)data[10] <<  8) | ((uint32_t)data[11]);
-        p2 = ((uint32_t)data[12] << 24) | ((uint32_t)data[13] << 16)
-           | ((uint32_t)data[14] <<  8) | ((uint32_t)data[15]);
-        hdr->n_blocks   = p1; /* likely total sample count or frame reference */
-        hdr->block_len  = p2; /* stored in block_len slot as metadata */
+    if (data_size >= 16) {
+        hdr->n_blocks = read_be32(data + 8);
+        hdr->block_len = 512;
     }
 
-    /* Auto-detect header end: find offset where remaining data is
-     * cleanly divisible by n_codebooks (uint8 index encoding) */
-    int codebooks = (int)hdr->n_codebooks;
-    int header_end = find_header_end(data, data_size, codebooks);
+    if ((hdr->flags & 0x80U) && hdr->version == 0) {
+        /* Fast TXC: either raw uint8 indices (tsac-ng encoder) or
+         * range-coded indices (original tsac -f mode).  Detect which
+         * by checking whether the payload starts with valid raw
+         * codebook index values (all < n_codebooks). */
+        int header_end = 16;
+        while (header_end < 256 && header_end < (int)data_size &&
+               ((data_size - (size_t)header_end) % (size_t)hdr->n_codebooks) != 0) {
+            header_end++;
+        }
+        if (header_end >= (int)data_size || header_end >= 256)
+            return TSAC_ERR_FORMAT;
 
-    if (header_end < 8) {
+        size_t idx_count = data_size - (size_t)header_end;
+        int total_frames = (int)(idx_count / (size_t)hdr->n_codebooks);
+        if (total_frames < 1 || (size_t)total_frames * (size_t)hdr->n_codebooks != idx_count)
+            return TSAC_ERR_FORMAT;
+
+        /* Validate: sample first bytes to detect range-coded format.
+         * Raw indices are [0, cb_size-1] where cb_size is the
+         * smallest power of two >= n_codebooks (e.g. nc=6 → cb=8). */
+        int cb_size = 1;
+        while (cb_size < (int)hdr->n_codebooks)
+            cb_size *= 2;
+
+        const uint8_t *src = data + header_end;
+        int is_range_coded = 0;
+        size_t sample_count = idx_count < 64 ? idx_count : (size_t)64;
+        for (size_t i = 0; i < sample_count; i++) {
+            if ((int)src[i] >= cb_size) {
+                is_range_coded = 1;
+                break;
+            }
+        }
+
+        if (is_range_coded) {
+            /* Range-coded fast TXC (original tsac -f mode).
+             * Initialize range decoder at header_end and read all
+             * indices from the compressed stream.  The frame count
+             * is determined by how many symbols the bitstream yields
+             * before exhaustion. */
+            RangeCoder rc;
+            if (rc_decoder_init(&rc, src, idx_count) != 0) {
+                fprintf(stderr, "tsac-ng: range decoder init failed\n");
+                return TSAC_ERR_CODEC;
+            }
+
+            int bits_per_idx = 0;
+            for (int t = cb_size - 1; t > 0; t >>= 1)
+                bits_per_idx++;
+
+            int *indices = (int *)calloc(idx_count, sizeof(int));
+            if (!indices) return TSAC_ERR_MEMORY;
+
+            int decoded = 0;
+            while (decoded < (int)idx_count && rc.buf_pos <= rc.buf_len) {
+                int sym = 0;
+                for (int b = 0; b < bits_per_idx; b++)
+                    sym = (sym << 1) | rc_decoder_get_freq(&rc, 0x4000);
+                if (sym >= cb_size)
+                    sym = sym & (cb_size - 1);
+                indices[decoded++] = sym;
+            }
+
+            total_frames = decoded / (int)hdr->n_codebooks;
+            if (total_frames < 1) {
+                free(indices);
+                return TSAC_ERR_FORMAT;
+            }
+
+            hdr->flags &= 0x7fU;
+            hdr->data_offset = (uint32_t)header_end;
+            hdr->block_len = 512;
+            hdr->sample_rate = 44100;
+            hdr->n_blocks = (uint32_t)total_frames;
+            *codebook_indices = indices;
+            *n_frames = total_frames;
+            return TSAC_OK;
+        }
+
+        int *indices = (int *)calloc(idx_count, sizeof(int));
+        if (!indices) return TSAC_ERR_MEMORY;
+
+        for (size_t i = 0; i < idx_count; i++)
+            indices[i] = (int)src[i];
+
+        hdr->flags &= 0x7fU;
+        hdr->data_offset = (uint32_t)header_end;
+        hdr->block_len = 512;
+        hdr->sample_rate = 44100;
+        hdr->n_blocks = (uint32_t)total_frames;
+        *codebook_indices = indices;
+        *n_frames = total_frames;
+        return TSAC_OK;
+    }
+
+    if (hdr->flags & 0x80U) {
+        /* CRC32 verification for normal-mode compressed payload.
+         * The last 4 bytes of the payload are the CRC32 (big-endian,
+         * byte-swapped from computed value). Algorithm reverse-engineered
+         * from original tsac binary: polynomial 0x04C11DB7, shift-left,
+         * initial value 0xFFFFFFFF. */
+        size_t payload_bytes = data_size - (size_t)hdr->data_offset;
+        if (payload_bytes >= 4) {
+            uint32_t stored = read_be32(data + data_size - 4);
+            uint32_t computed = crc32(data + hdr->data_offset,
+                                       payload_bytes - 4, 0xFFFFFFFF);
+            if (stored != computed) {
+                fprintf(stderr, "tsac-ng: CRC32 mismatch (stored=0x%08x computed=0x%08x)\n",
+                        stored, computed);
+                return TSAC_ERR_CODEC;
+            }
+        }
+        fprintf(stderr,
+                "tsac-ng: compressed/transformer-coded .txc payload is not decoded yet "
+                "(frames=%u, codebooks=%u). Raw RVQ fallback would be invalid.\n",
+                hdr->n_blocks, hdr->n_codebooks);
+        return TSAC_ERR_CODEC;
+    }
+
+    int codebooks = (int)hdr->n_codebooks;
+
+    int int16_header = find_header_end_int16(data, data_size, codebooks);
+    int uint8_header = find_header_end_uint8(data, data_size, codebooks);
+    int is_int16 = 0;
+    int header_end;
+
+    /* Prefer header closest to sizeof(TSCHeader)=28 for our encoder output */
+    if (uint8_header >= 8 && (int16_header <= 0 || uint8_header >= int16_header)) {
+        header_end = uint8_header;
+    } else if (int16_header > 0) {
+        header_end = int16_header;
+        is_int16 = 1;
+    } else {
         return TSAC_ERR_FORMAT;
     }
 
     hdr->data_offset = (uint32_t)header_end;
 
     size_t payload_size = data_size - (size_t)header_end;
-    size_t idx_count = payload_size; /* n_frames * n_codebooks, uint8 each */
-
+    size_t idx_count = payload_size / (is_int16 ? 2 : 1);
     int total_frames = (int)(idx_count / (size_t)codebooks);
 
     if (total_frames < 1 || (size_t)total_frames * (size_t)codebooks != idx_count)
         return TSAC_ERR_FORMAT;
 
-    /* Allocate and convert: uint8 → int (0..255 codebook indices) */
     int *indices = (int *)calloc(idx_count, sizeof(int));
     if (!indices) return TSAC_ERR_MEMORY;
 
     const uint8_t *src = data + header_end;
-    for (size_t i = 0; i < idx_count; i++)
-        indices[i] = (int)src[i];
+
+    if (is_int16) {
+        for (size_t i = 0; i < idx_count; i++) {
+            int16_t val = (int16_t)((uint16_t)src[i*2] | ((uint16_t)src[i*2+1] << 8));
+            indices[i] = (int)val;
+        }
+    } else {
+        for (size_t i = 0; i < idx_count; i++)
+            indices[i] = (int)src[i];
+    }
 
     *codebook_indices = indices;
     *n_frames = total_frames;
 
-    /* Store actual frame count in header */
-    hdr->n_blocks    = (uint32_t)total_frames;
-    hdr->block_len   = 600; /* default frame length (48kHz / 80fps) */
-    hdr->sample_rate = 48000;
+    hdr->block_len = 512;
+    hdr->sample_rate = 44100;
+
+    if (data_size >= 24 && is_int16) {
+        uint32_t p3_le = (uint32_t)data[16] | ((uint32_t)data[17] << 8)
+                       | ((uint32_t)data[18] << 16) | ((uint32_t)data[19] << 24);
+        uint32_t p4_le = (uint32_t)data[20] | ((uint32_t)data[21] << 8)
+                       | ((uint32_t)data[22] << 16) | ((uint32_t)data[23] << 24);
+        if (p3_le == 44100 || p3_le == 48000) hdr->sample_rate = p3_le;
+        if (p4_le == 44100 || p4_le == 48000) hdr->sample_rate = p4_le;
+    }
+
+    hdr->n_blocks = (uint32_t)total_frames;
 
     return TSAC_OK;
 }
