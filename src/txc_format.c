@@ -224,7 +224,7 @@ int txc_read(const uint8_t *data, size_t data_size,
 
         if (is_bitpacked) {
             const uint8_t *buf = data + 8;
-            size_t bm_idx_count = data_size - 8;
+            size_t bm_idx_count = data_size - 8 + 3;  /* +3 matches original's realloc(size+3) padding */
             int total_bits = (int)bm_idx_count * 8;
             int total_indices = total_bits / 10;
             total_frames = total_indices / (int)hdr->n_codebooks;
