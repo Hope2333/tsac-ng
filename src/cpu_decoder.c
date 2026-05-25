@@ -894,7 +894,7 @@ float *dequant_weights(const DACTensor *weight_v, const DACTensor *weight_g,
         for (int g = 0; g < n_groups; g++) {
             float group_scale = (float)(p[group_size] ? p[group_size] : 1) / 127.0f;
             for (int i = 0; i < group_size; i++) {
-                src_f32[out++] = ((float)*p++ - 128.0f) * group_scale / 127.0f;
+                src_f32[out++] = ((float)*p++ - 128.0f) * group_scale;
             }
             p++; /* grouped BF8 scale byte */
         }
@@ -975,13 +975,19 @@ static int decode_batch(DACTensor *ts, int nt,
 
         for (int f = 0; f < ctx_frames; f++) {
             int code_idx = (code_offset + f) * n_cb + cb;
-            int entry = codes[code_idx];
-            if (entry < 0) entry = 0;
-            if (entry >= dim) entry = dim - 1;
-            entry = entry / (dim / entries);
+            int raw = codes[code_idx];
+            if (raw < 0) raw = 0;
+            if (raw >= dim) raw = dim - 1;
+
+            int group = dim / entries;
+            int e0 = raw / group;
+            int e1 = (e0 + 1) % entries;
+            float blend = (float)(raw % group) / (float)group;
 
             for (int d = 0; d < dim && d < rvq_dim; d++) {
-                rvq_out[d * ctx_frames + f] += cb_data[entry * dim + d];
+                float v0 = cb_data[e0 * dim + d];
+                float v1 = cb_data[e1 * dim + d];
+                rvq_out[d * ctx_frames + f] += v0 * (1.0f - blend) + v1 * blend;
             }
         }
     }
