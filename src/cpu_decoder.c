@@ -976,8 +976,9 @@ static int decode_batch(DACTensor *ts, int nt,
         for (int f = 0; f < ctx_frames; f++) {
             int code_idx = (code_offset + f) * n_cb + cb;
             int entry = codes[code_idx];
-            if (entry < 0 || entry >= entries) entry = entry % entries;
             if (entry < 0) entry = 0;
+            if (entry >= dim) entry = dim - 1;
+            entry = entry / (dim / entries);
 
             for (int d = 0; d < dim && d < rvq_dim; d++) {
                 rvq_out[d * ctx_frames + f] += cb_data[entry * dim + d];
