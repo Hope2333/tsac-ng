@@ -1,0 +1,112 @@
+# Decision Log — tsac-ng v0.1.0 (Round 004)
+
+## Round 004 Key Decisions
+
+### 2026-05-21: DAC architecture realignment
+- **Context**: ISS-011/ISS-012 blocked decoder correctness. Need definitive architecture reference.
+- **Options**: (a) Keep debugging GroupNorm hypothesis, (b) Verify against external DAC reference, (c) Reverse original binary
+- **Decision**: (b) Librarian found descript-audio-codec source. Confirmed ResidualUnit = Snake→dilated Conv7→Snake→Conv1→residual. DAC decoder has NO GroupNorm.
+- **Result**: Architecture fixed. Zero GroupNorm code path in decoder.
+
+### 2026-05-21: BF8 scale formula selection
+- **Context**: BF8 weight_v has extra scale byte per group. Tested 6 candidate formulas.
+- **Options**: pow2(exp-127), pow2(exp-128), signed exponent, linear exp/127, E4M3, skip
+- **Decision**: Linear `scale_byte / 127` — only formula producing weights in [-2, +2] range. pow2 variants explode to 1e38.
+- **Result**: BF8 group scale applied correctly in dequant_weights.
+
+### 2026-05-21: weight_norm L2 reconstruction
+- **Context**: PyTorch DAC uses `W = g * v / ||v||₂`. Old code just did `g * (v-128)/127`.
+- **Decision**: Implement full per-channel L2 norm computation in dequant_weights. Norm dimension is always weight_v->dims[2].
+- **Result**: Weights reconstructed correctly.
+
+### 2026-05-21: BATCH_FRAMES reduction (5000 → 16)
+- **Context**: Full decode of 6300-frame file took >30min with batch_size=5000 (too many output frames per batch).
+- **Options**: (a) Keep 5000 and accept slowness, (b) Reduce to 16 (matches original `batch_size=16`)
+- **Decision**: (b) 16 — matches original tsac behavior, makes decode ~300x faster per batch.
+- **Result**: 16-frame decode <1s. 64-frame decode ~15s. Full 6300-frame decode still slow due to scalar inner block dilation.
+
+### 2026-05-21: ConvTranspose stride (was hardcoded 2 → is K/2)
+- **Context**: CUDA/HIP conv_transpose kernels had hardcoded `stride=2`. DAC strides: 8, 8, 4, 2.
+- **Decision**: Make stride a kernel parameter, compute as `K/2` per block.
+- **Result**: Strider correct across all backends.
+
+### 2026-05-21: Remove 1/K convt normalization
+- **Context**: CPU convt1d had `norm = 1.0f/K`. Not present in DAC or GPU kernels.
+- **Decision**: Remove entirely — weights are already scaled correctly by weight_norm.
+- **Result**: Consistent amplitude between CPU and GPU paths.
+
+### 2026-05-21: tanh final activation vs max_abs normalization
+- **Context**: Old code used `scale = 1.0f/max_abs` normalization. DAC decoder ends with `nn.Tanh()`.
+- **Decision**: Use `tanhf()` per sample — matches PyTorch DAC exactly.
+- **Result**: Output clamped to [-1, 1] with smooth saturation.
+
+### 2026-05-21: .txc fast-mode parsing
+- **Context**: All original tsac output has flags&0x80. Two variants: version=0 (fast/raw) and version=1 (compressed/Transformer).
+- **Decision**: Parse version=0 as uint8 RVQ indices. Fail-fast version=1 with clear message about missing subsystem.
+- **Result**: Fast-mode .txc files now decode. Normal mode gives helpful error.
+
+### 2026-05-21: GPU/HIP GroupNorm removal
+- **Context**: Previous session added GroupNorm to CUDA/HIP inner blocks based on wrong hypothesis.
+- **Decision**: Remove GN upload/call from both GPU backends. DAC has no GroupNorm. Only keep stride fix (K/2) and residual add.
+- **Result**: GPU backends no longer have incorrect GN path. Full ResidualUnit fix still pending for GPU.
+
+## 2026-05-24: CRC32 table generated algorithmically
+- **Context**: Oracle found 176/256 entries wrong in manually-transcribed CRC32 table
+- **Decision**: Replace with auto-generated table from polynomial 0x04C11DB7
+- **Result**: 256/256 correct, standard test vector passes (Oracle-verified)
+
+## 2026-05-24: ULW Loop for deep RE
+- **Context**: Need systematic binary RE beyond surface-level analysis
+- **Decision**: Use 5-agent parallel launch (Oracle + 2×Explore + Librarian + bash)
+- **Result**: 2 agents completed, 3 lost to session compaction (documented limitation)
+
+## 2026-05-25: Round 008 — Fast-mode range coder is in-memory
+- **Context**: get_freq/vec_sum_f32 confirmed NOT called in fast mode. Need to find actual range coder.
+- **Decision**: Use GDB to count fgetc/fread calls during fast decode. Result: fgetc=4, fread=2.
+- **Finding**: Range coder operates in-memory on 68-byte fread buffer. No I/O-based range decoding.
+- **Result**: Narrowed range coder location to code between TXC fclose and decoder dispatch.
+
+## 2026-05-25: Round 009 — Fast-mode range coder is INLINE code
+- **Context**: Callgrind + GDB search for exact range coder function address
+- **Decision**: Test ALL arith.c prologues via GDB breakpoints. Result: 0 hits.
+- **Finding**: Range coder is inline, not a separate callable function. arith.c not used in fast mode.
+- **Evidence**: /tmp/gdb_arith_prologues.log (10 breakpoints, all 0 hits)
+- **Implication**: tsac-ng should use inline bit reader, not get_freq function call.
+Round 010: test tautology confirmed (sym>=cb always passes)
+- **2026-05-25: Round 010 — Tautological validity check discovered**: The sym>=cb check since Round 001 is structurally impossible to fail. All "valid indices" claims are vacuous. Correct approach: GDB capture of actual indices from original tsac, or WAV comparison.
+Round 011: 0x4044d0 NOT fast-mode dispatch — correction of Round 009 claim
+Round 012: Failed — tautological test repeated, zero progress
+Round 013: BREAKTHROUGH — fast TXC uses 10-bit bitpacking, not range coding
+Round 014: Failed — no progress on RMS error, params already correct
+Round 015: Buffer boundary not root cause — RMS unchanged at -3.4dB
+Round 016: 10-bit decoder 54/54 verified against GDB ground truth
+Round 017: RMS root cause found — codebook entries=8, 10-bit mapping needs RE
+Round 018: Failed — GDB RVQ capture returned all zeros
+Round 019: GDB capture failed. Weighted combination is hypothesis, not verified.
+Round 020: Weighted blending no improvement. BF8 dequant may differ from libnc.
+Round 021: RMS root cause — BF8 dequant + weight_norm mismatch
+Round 022: BF8 double-division fix — removed extra /127.0f (commit 6a42865). RMS unchanged.
+Round 023: RMS verified unchanged at -3.4dB after R022 fix.
+Round 024: State updated to ROUND_023_COMPLETE (round=23).
+R024-R026: GDB weights confirm codebook weights NOT the RMS issue
+R027-R029: RVQ output divergence found — avg diff 3.18 vs original
+R030-R032: Original RVQ uses in_proj(1024→8) → out_proj(8→1024) dual projection. Our direct lookup skips in_proj — RMS root cause.
+Round 033: in_proj+out_proj implemented (57fd801). RMS unchanged — BF8 dequant likely root cause across ALL tensors.
+
+# ROUND 034 (2026-05-26)
+- Triple-agent investigation of BF8 dequant root cause
+- Found: nc_convert_from_old_bf at 0x8310 is PURE memory layout descriptor — ZERO float instructions
+- Found: BF8→float32 dequant must happen elsewhere (nc_load_param or JIT kernel)
+- All 5 libnc intercept methods blocked: LD_PRELOAD (crash), ctypes (hang), dlopen (missing logf), C+libm (hang), GDB (unreliable)
+- Decision: defer BF8 fix until new approach found; focus on Normal TXC documentation
+
+# ROUND 035 (2026-05-26)
+- Normal TXC format fully documented: state bytes (4-14B for silence, 443B for music)
+- Range coder pipeline: state→freq tables→binary search→index (log2(1024)=10 bits/index)
+- Verified: 9 frames×6 cb = 54 indices = 540 get_freq calls (10 bits each)
+- Decision: Transformer decoder deferred to future round; prepare infrastructure
+
+# ROUND 036 (2026-05-26)
+- Code quality pass: fuck-u-code 69.55/100, CodeWrench 518 warnings (mostly C false positives)
+- Time-complexity MCP: does not support .c files
+- Decision: acceptable for RE phase; defer cleanup to post-RMS-fix round

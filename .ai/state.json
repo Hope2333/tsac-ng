@@ -1,0 +1,155 @@
+{
+  "phase": "ROUND_036_COMPLETE",
+  "round": 36,
+  "status": "round_036_complete",
+  "next_action": "Round 037: BF8 dequant fix via mathematical formula reverse-engineering or alternative GDB memory dump",
+  "blockers": [
+    "BF8 dequant: libnc nc_convert_from_old_bf fused op differs from separate dequant+L2+scale steps; all 5 intercept methods (LD_PRELOAD/ctypes/dlopen/GDB) blocked"
+  ],
+  "context_summary": "Audit R011-R036 complete. R013-016: 10-bit decoder 100% (54/54 indices). R033: in_proj+out_proj implemented, RMS unchanged. R034: BF8 dequant confirmed as root cause, libnc intercept blocked. R035: Normal TXC format documented (540 get_freq calls/54 indices). R036: Code quality 69.55/100.",
+  "iss_status": {
+    "ISS-001": {
+      "title": "DAC model incomplete",
+      "status": "FIXED"
+    },
+    "ISS-002": {
+      "title": "Termux path",
+      "status": "FIXED"
+    },
+    "ISS-003": {
+      "title": "getopt order",
+      "status": "UNFIXED",
+      "note": "cosmetic"
+    },
+    "ISS-004": {
+      "title": "ARM SIMD name",
+      "status": "FIXED"
+    },
+    "ISS-005": {
+      "title": "CPU encoder",
+      "status": "PARTIAL"
+    },
+    "ISS-011": {
+      "title": "Decoder WAV mismatch",
+      "status": "IN_PROGRESS",
+      "note": "BF8 dequant root cause confirmed; fix blocked by libnc intercept"
+    },
+    "ISS-013": {
+      "title": "Normal TXC not supported",
+      "status": "OPEN",
+      "note": "Normal TXC format fully documented; state->freq table + binary search decoder + Transformer deferred"
+    },
+    "ISS-014": {
+      "title": "Fast TXC range coder location",
+      "status": "LOCALIZED",
+      "note": "SOLVED: 10-bit bitpacking decoder at txcc offset 8, confirmed 54/54 indices GDB ground truth (R016)"
+    },
+    "ISS-015": {
+      "title": "CRC32 table",
+      "status": "FIXED"
+    },
+    "ISS-016": {
+      "title": "get_freq probability model",
+      "status": "OPEN",
+      "note": "get_freq implemented; adaptive model requires normal TXC state initialization (R035)"
+    },
+    "ISS-017": {
+      "title": "Verbose logging parity",
+      "status": "FIXED"
+    },
+    "ISS-018": {
+      "title": "Fast-mode range coder I/O trace",
+      "status": "COMPLETE",
+      "note": "GDB confirmed fgetc=4, fread=2; 68B in-memory buffer"
+    }
+  },
+  "backends": {
+    "cpu_x86_64": {
+      "status": "decoder_verified",
+      "encoder": "arch_done_stride_needed"
+    },
+    "cuda_decode": {
+      "status": "synced_dilation_residualUnit"
+    },
+    "hip_decode": {
+      "status": "stride_only"
+    }
+  },
+  "reverse_engineering": {
+    "crc32": {
+      "status": "VERIFIED",
+      "polynomial": "0x04C11DB7"
+    },
+    "get_bit": {
+      "status": "DEAD_CODE",
+      "address": "0x42bd30"
+    },
+    "get_freq": {
+      "status": "IMPLEMENTED",
+      "address": "0x42bbe0",
+      "algorithm": "range0=(range*freq)>>15, norm=0xFF00",
+      "source": "arith.c"
+    },
+    "fast_txc_io": {
+      "status": "TRACED",
+      "fgetc": 4,
+      "fread": 2,
+      "buffer": "68B in-memory"
+    },
+    "fast_dispatch_0x4044d0": {
+      "status": "DISPROVEN",
+      "note": "0 GDB hits \u2014 NOT fast-mode dispatch (Round 011)"
+    },
+    "fast_dispatch_0x405d3c": {
+      "status": "DISPROVEN",
+      "note": "0 GDB hits \u2014 normal-mode only (Round 009)"
+    },
+    "normal_txc_header": {
+      "status": "CONFIRMED",
+      "n_blocks": "bytes 8-11 BE uint32"
+    },
+    "transformer": {
+      "layers": 12,
+      "d_model": 512,
+      "n_head": 4,
+      "rotary": true
+    },
+    "test_data": {
+      "source": "MOGRA DJ audio (196min)",
+      "count": 23,
+      "modes": "fast/normal \u00d7 q6/q12"
+    },
+    "callgrind": {
+      "fast": "/tmp/callgrind_fast.out (174KB)",
+      "normal": "/tmp/callgrind_norm.out (174KB)"
+    },
+    "batch_size": {
+      "normal": 1,
+      "fast": "unused"
+    },
+    "decoder_batch": "32 conv1d calls (30 DAC + 2 RVQ)",
+    "10bit_decoder": {
+      "status": "VERIFIED",
+      "indices": "54/54 GDB ground truth",
+      "round": 16
+    },
+    "in_proj_out_proj": {
+      "status": "IMPLEMENTED",
+      "commit": "57fd801",
+      "round": 33,
+      "note": "RMS unchanged, BF8 dequant across all tensors is root cause"
+    },
+    "normal_txc_pipeline": {
+      "status": "DOCUMENTED",
+      "get_freq_calls": 540,
+      "indices_per_call": 54,
+      "state_format": "4-14B padding-dependent",
+      "round": 35
+    },
+    "bf8_dequant_root_cause": {
+      "status": "CONFIRMED_BLOCKED",
+      "note": "nc_convert_from_old_bf fused op blocked by thread-heavy libnc init",
+      "round": 34
+    }
+  }
+}

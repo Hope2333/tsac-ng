@@ -140,7 +140,7 @@ Options (compatible with original tsac):
 ## Roadmap
 
 See [.ai/ROADMAP.md](.ai/ROADMAP.md) for detailed milestone planning.
-Current phase: **ROUND_023_COMPLETE** (~60% overall completion).
+Current phase: **ROUND_036_COMPLETE** (~60% overall completion).
 
 ## License
 
