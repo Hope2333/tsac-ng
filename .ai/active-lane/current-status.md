@@ -1,17 +1,16 @@
 # Current Status
 
-**Phase**: ROUND_036_COMPLETE → ROUND_037_PENDING
+**Phase**: ROUND_039_COMPLETE → ROUND_040_PENDING
 **Date**: 2026-05-26
 
 ## Active Issues
-- **ISS-011**: BF8 dequant RMS error −3.44 dB FS — root cause confirmed, fix blocked by libnc
-- **ISS-013**: Normal TXC not supported — format documented, Transformer deferred
+- **ISS-011**: Decoder WAV mismatch — BF8 dequant formula verified, group structure/conv kernel remain open
+- **ISS-013**: Normal TXC not supported — format documented, implementation deferred
 
-## Next Round: 037
-BF8 dequant fix via mathematical formula reverse-engineering or alternative GDB memory dump technique.
+## Next Round: 040
+Conv1d layer-by-layer output comparison via GDB to isolate which layer first diverges.
 
 ## Key Evidence
-- `docs/evidence/gdb_indices_round016.txt` — 54/54 GDB ground truth
-- `/tmp/gdb_q0_weights.bin` — original codebook 0 weights (8192 float32)
-- `/tmp/gdb_rvq_out.bin` — original RVQ output (1024 float32)
-- `docs/evidence/nc_convert_from_old_bf_disasm.txt` — libnc disassembly
+- 9 BF8 formula variants tested (R038): all equivalent under same group structure
+- libnc weight comparison blocked (R037): nc_convert_from_old_bf is internal call
+- Reference RMS: -13.85 dBFS; Our RMS: -3.86 dBFS (10 dB gap)

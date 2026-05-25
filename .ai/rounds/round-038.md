@@ -26,7 +26,7 @@ Test BF8 dequant formula variations to find which produces correct audio output.
 | 9 | Per-input-channel norm | 0.999 | -0.01 | saturated |
 
 ## Key Finding
-**The BF8 dequant formula is verified correct.** The L2 norm acts as a normalizer — within each channel, the relative distribution of dequantized values is preserved regardless of absolute scale. Epsilon and precision have negligible impact.
+**The BF8 dequant formula under the SAME group structure is verified correct. Group structure (normalization axis, group boundaries) remains an open variable — NOT ruled out.** The L2 norm acts as a normalizer — within each channel, the relative distribution of dequantized values is preserved regardless of absolute scale. Epsilon and precision have negligible impact.
 
 The 10 dB amplitude mismatch must originate from:
 1. Conv1d/ConvTranspose kernel implementation differences

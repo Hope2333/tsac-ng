@@ -7,7 +7,7 @@
 
 ### Verified Correct
 - ✅ 10-bit codebook indices: 54/54 GDB ground truth (R016)
-- ✅ BF8 dequant formula: all variations produce identical RMS (R038)
+- ✅ BF8 dequant formula: all variations under same group structure produce identical RMS; group structure NOT ruled out (R038)
 - ✅ in_proj+out_proj RVQ lookup: implemented, RMS unchanged (R033)
 - ✅ Codebook weights: injected originals, RMS unchanged (R025)
 - ✅ CRC32, range coder (get_freq), TXC format parsing
@@ -25,7 +25,7 @@
 | tanh implementation differs | nc_tanh absent from PLT imports | Medium |
 | RVQ codebook summation scaling | Residual vectors vs simple sum | Medium |
 | Missing post-processing gain | Audio scaling factor | Low |
-| Group structure differs | L2 norm cancels within-channel differences | Low |
+| Group structure differs | L2 norm cancels within-channel scale but NOT cross-channel; untested | Medium |
 
 ## Next Steps
 1. Compare conv1d outputs layer-by-layer using GDB breakpoints
