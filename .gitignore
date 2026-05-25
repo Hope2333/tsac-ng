@@ -41,5 +41,6 @@ models/
 
 # AI-LTC state (local only, not versioned)
 .ai/
+.sisyphus/
 releases/*
 tests/

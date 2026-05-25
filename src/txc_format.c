@@ -18,7 +18,6 @@
  *   Header end auto-detected. Each index occupies 1 byte.
  */
 #include "txc_format.h"
-#include "range_coder.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -188,12 +187,12 @@ int txc_read(const uint8_t *data, size_t data_size,
         hdr->block_len = 512;
     }
 
-    if ((hdr->flags & 0x80U) && hdr->version == 0) {
+    if ((hdr->flags & 0x80U)) {
         /* Fast TXC: either raw uint8 indices (tsac-ng encoder) or
          * range-coded indices (original tsac -f mode).  Detect which
          * by checking whether the payload starts with valid raw
          * codebook index values (all < n_codebooks). */
-        int header_end = 16;
+        int header_end = 8;
         while (header_end < 256 && header_end < (int)data_size &&
                ((data_size - (size_t)header_end) % (size_t)hdr->n_codebooks) != 0) {
             header_end++;
@@ -214,42 +213,44 @@ int txc_read(const uint8_t *data, size_t data_size,
             cb_size *= 2;
 
         const uint8_t *src = data + header_end;
-        int is_range_coded = 0;
+        int is_bitpacked = 0;
         size_t sample_count = idx_count < 64 ? idx_count : (size_t)64;
         for (size_t i = 0; i < sample_count; i++) {
             if ((int)src[i] >= cb_size) {
-                is_range_coded = 1;
+                is_bitpacked = 1;
                 break;
             }
         }
 
-        if (is_range_coded) {
-            /* Range-coded fast TXC (original tsac -f mode).
-             * Initialize range decoder at header_end and read all
-             * indices from the compressed stream.  The frame count
-             * is determined by how many symbols the bitstream yields
-             * before exhaustion. */
-            RangeCoder rc;
-            if (rc_decoder_init(&rc, src, idx_count) != 0) {
-                fprintf(stderr, "tsac-ng: range decoder init failed\n");
-                return TSAC_ERR_CODEC;
-            }
+        if (is_bitpacked) {
+            const uint8_t *buf = data + 8;
+            size_t bm_idx_count = data_size - 8;
+            int total_bits = (int)bm_idx_count * 8;
+            int total_indices = total_bits / 10;
+            total_frames = total_indices / (int)hdr->n_codebooks;
+            if (total_frames < 1)
+                return TSAC_ERR_FORMAT;
 
-            int bits_per_idx = 0;
-            for (int t = cb_size - 1; t > 0; t >>= 1)
-                bits_per_idx++;
+            int bit_pos = 0;
 
-            int *indices = (int *)calloc(idx_count, sizeof(int));
+            int *indices = (int *)calloc((size_t)total_indices, sizeof(int));
             if (!indices) return TSAC_ERR_MEMORY;
 
             int decoded = 0;
-            while (decoded < (int)idx_count && rc.buf_pos <= rc.buf_len) {
-                int sym = 0;
-                for (int b = 0; b < bits_per_idx; b++)
-                    sym = (sym << 1) | rc_decoder_get_freq(&rc, 0x4000);
-                if (sym >= cb_size)
-                    sym = sym & (cb_size - 1);
+            while (decoded < total_indices) {
+                int byte_off = bit_pos >> 3;
+                uint32_t val = 0;
+                int avail = (int)bm_idx_count - byte_off;
+                if (avail >= 4)
+                    memcpy(&val, buf + byte_off, 4);
+                else if (avail > 0)
+                    memcpy(&val, buf + byte_off, (size_t)avail);
+                val = ((val & 0xFF) << 24) | ((val & 0xFF00) << 8)
+                    | ((val >> 8) & 0xFF00) | (val >> 24);
+                int shift = 22 - (bit_pos & 7);
+                int sym = (int)((val >> shift) & 0x3FF);
                 indices[decoded++] = sym;
+                bit_pos += 10;
             }
 
             total_frames = decoded / (int)hdr->n_codebooks;
@@ -259,7 +260,7 @@ int txc_read(const uint8_t *data, size_t data_size,
             }
 
             hdr->flags &= 0x7fU;
-            hdr->data_offset = (uint32_t)header_end;
+            hdr->data_offset = 8;
             hdr->block_len = 512;
             hdr->sample_rate = 44100;
             hdr->n_blocks = (uint32_t)total_frames;
