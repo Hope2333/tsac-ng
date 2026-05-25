@@ -963,33 +963,49 @@ static int decode_batch(DACTensor *ts, int nt,
     if (!rvq_out) return TSAC_ERR_MEMORY;
 
     for (int cb = 0; cb < n_cb && cb < 12; cb++) {
-        char cb_name[128];
-        snprintf(cb_name, sizeof(cb_name),
-                 "quantizer.quantizers.%d.codebook.weight", cb);
-        DACTensor *codebook = tf(ts, nt, cb_name);
-        if (!codebook) continue;
+        char ip_name[128], op_name[128];
+        snprintf(ip_name, sizeof(ip_name),
+                 "quantizer.quantizers.%d.in_proj.weight_v", cb);
+        snprintf(op_name, sizeof(op_name),
+                 "quantizer.quantizers.%d.out_proj.weight_v", cb);
 
-        int entries = codebook->dims[0];
-        int dim     = codebook->dims[1];
-        const float *cb_data = (const float *)codebook->data;
+        DACTensor *ip_wv = tf(ts, nt, ip_name);
+        DACTensor *op_wv = tf(ts, nt, op_name);
+        DACTensor *ip_wg = tf(ts, nt, ip_name);
+        if (!ip_wv || !op_wv) continue;
+        ip_name[strlen(ip_name)-1] = 'g';
+        ip_name[strlen(ip_name)-1] = 'g';
+        ip_wg = tf(ts, nt, ip_name);
 
+        int ip_Ci, ip_K, ip_Co, op_Ci, op_K, op_Co, dummy;
+        float *ip_f32 = dequant_weights(ip_wv, ip_wg, NULL, &ip_Ci, &ip_K, &ip_Co, &dummy);
+        DACTensor *op_bias = tf(ts, nt, "dummy");
+        float *op_f32 = dequant_weights(op_wv, NULL, op_bias, &op_Ci, &op_K, &op_Co, &dummy);
+        if (!ip_f32 || !op_f32) { free(ip_f32); free(op_f32); continue; }
+
+        /* in_proj: [1024, 1, 8] → 1024 rows of 8 values
+         * out_proj: [8, 1, 1024] → 8 rows of 1024 values */
         for (int f = 0; f < ctx_frames; f++) {
             int code_idx = (code_offset + f) * n_cb + cb;
             int raw = codes[code_idx];
             if (raw < 0) raw = 0;
-            if (raw >= dim) raw = dim - 1;
+            if (raw >= ip_Ci) raw = ip_Ci - 1;
 
-            int group = dim / entries;
-            int e0 = raw / group;
-            int e1 = (e0 + 1) % entries;
-            float blend = (float)(raw % group) / (float)group;
+            /* in_proj lookup: row 'raw' gives 8 intermediate values */
+            float ip_vec[8];
+            for (int o = 0; o < 8 && o < ip_Co; o++)
+                ip_vec[o] = ip_f32[raw * ip_Co + o];
 
-            for (int d = 0; d < dim && d < rvq_dim; d++) {
-                float v0 = cb_data[e0 * dim + d];
-                float v1 = cb_data[e1 * dim + d];
-                rvq_out[d * ctx_frames + f] += v0 * (1.0f - blend) + v1 * blend;
+            /* out_proj: 8×1024 matrix multiply → 1024-dim feature */
+            for (int d = 0; d < op_Co && d < rvq_dim; d++) {
+                float sum = 0;
+                for (int o = 0; o < 8 && o < op_Ci; o++)
+                    sum += ip_vec[o] * op_f32[o * op_Co + d];
+                rvq_out[d * ctx_frames + f] += sum;
             }
         }
+        free(ip_f32);
+        free(op_f32);
     }
 
     DBG("[DEBUG] RVQ NaN: %d/%d\n", count_nan(rvq_out, 1024*ctx_frames), 1024*ctx_frames);
