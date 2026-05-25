@@ -971,11 +971,12 @@ static int decode_batch(DACTensor *ts, int nt,
 
         DACTensor *ip_wv = tf(ts, nt, ip_name);
         DACTensor *op_wv = tf(ts, nt, op_name);
-        DACTensor *ip_wg = tf(ts, nt, ip_name);
+        DACTensor *ip_wg = NULL;
+        if (ip_wv && op_wv) {
+            ip_name[strlen(ip_name)-1] = 'g';
+            ip_wg = tf(ts, nt, ip_name);
+        }
         if (!ip_wv || !op_wv) continue;
-        ip_name[strlen(ip_name)-1] = 'g';
-        ip_name[strlen(ip_name)-1] = 'g';
-        ip_wg = tf(ts, nt, ip_name);
 
         int ip_Ci, ip_K, ip_Co, op_Ci, op_K, op_Co, dummy;
         float *ip_f32 = dequant_weights(ip_wv, ip_wg, NULL, &ip_Ci, &ip_K, &ip_Co, &dummy);
