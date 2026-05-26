@@ -1,5 +1,5 @@
 {
-  "updated": "2026-05-26 20:55:55",
+  "updated": "2026-05-26 21:08:37",
   "quality_score": "86.85",
   "rounds_completed": [
     79,
@@ -19,7 +19,10 @@
     93,
     94,
     95,
-    96
+    96,
+    97,
+    98,
+    99
   ],
   "key_findings": {
     "is_ct_regression": {
@@ -91,6 +94,10 @@
       "fuck_u_code": 86.85,
       "time_complexity": "clean",
       "codewrench": "52 FP"
+    },
+    "nc_reduce_sum_sqr": {
+      "disassembled": true,
+      "path": "docs/evidence/nc_reduce_sum_sqr_disasm.txt"
     }
   },
   "quality_tools": {
