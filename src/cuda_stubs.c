@@ -1,4 +1,5 @@
 #include "tsac_codec.h"
+/* Stub implementation — real code is in the backend-specific modules. */
 
 int tsac_cuda_init(void **priv)
 {

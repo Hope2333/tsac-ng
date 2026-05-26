@@ -1,4 +1,5 @@
 #include "dac_model.h"
+/* Wrapper around cpu_decoder.c for decoder dispatch. */
 #include "model_loader.h"
 #include <stdlib.h>
 #include <string.h>

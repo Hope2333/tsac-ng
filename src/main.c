@@ -55,6 +55,60 @@ static void print_usage(const char *prog)
         tsac_version(), prog);
 }
 
+
+/* Find the first directory containing dac_stereo_q8.bin.
+ * Searches common install locations including Termux paths. */
+static const char *find_model_dir(void) {
+    static const char *search_paths[] = {
+        "models/tsac",
+        "/usr/share/tsac",
+        "/usr/lib/tsac",
+        "/data/data/com.termux/files/usr/share/tsac",  /* Termux */
+        "/data/data/com.termux/files/home/develop/tsac-ng/models",
+        NULL
+    };
+    for (int i = 0; search_paths[i]; i++) {
+        char test[512];
+        snprintf(test, sizeof(test), "%s/dac_stereo_q8.bin", search_paths[i]);
+        FILE *f = fopen(test, "rb");
+        if (f) { fclose(f); return search_paths[i]; }
+    }
+    return "/usr/share/tsac";  /* fallback */
+}
+
+
+
+/* Execute the requested command (compress/decompress/roundtrip).
+ * Returns TSAC_OK on success, error code otherwise. */
+static int execute_command(TSACContext *ctx, const char *cmd,
+                           const char *infile, const char *outfile,
+                           int n_codebooks, int verbose) {
+    int ret = 0;
+    if (cmd[0] == 'c') {
+        if (verbose) fprintf(stderr, "Compressing %s -> %s\n", infile, outfile);
+        ret = tsac_compress_file(ctx, infile, outfile, n_codebooks);
+    } else if (cmd[0] == 'd') {
+        if (verbose) fprintf(stderr, "Decompressing %s -> %s\n", infile, outfile);
+        ret = tsac_decompress_file(ctx, infile, outfile);
+    } else if (cmd[0] == 't') {
+        if (verbose) fprintf(stderr, "Round-trip test: %s -> (compress) -> (decompress) -> %s\n",
+                             infile, outfile);
+        char tmp_path[] = "/tmp/tsac_rt_XXXXXX";
+        int tmp_fd = mkstemp(tmp_path);
+        if (tmp_fd < 0) {
+            fprintf(stderr, "Error: cannot create temp file\n");
+            return 1;
+        }
+        close(tmp_fd);
+        ret = tsac_compress_file(ctx, infile, tmp_path, n_codebooks);
+        if (ret == TSAC_OK)
+            ret = tsac_decompress_file(ctx, tmp_path, outfile);
+        if (remove(tmp_path) != 0 && verbose)
+            fputs("Warning: failed to remove temp file\n", stderr);
+    }
+    return ret;
+}
+
 int main(int argc, char **argv)
 {
     int use_cuda   = 0;
@@ -168,23 +222,8 @@ int main(int argc, char **argv)
     if (use_llvm)   { backend = TSAC_BACKEND_LLVM;   backend_name = "LLVM JIT"; }
 
     /* Determine model directory */
-    const char *model_dir = "/usr/share/tsac";
-    {
-        const char *search_paths[] = {
-            "models/tsac",
-            "/usr/share/tsac",
-            "/usr/lib/tsac",
-            "/data/data/com.termux/files/usr/share/tsac",  /* Termux */
-            "/data/data/com.termux/files/home/develop/tsac-ng/models",
-            NULL
-        };
-        for (int i = 0; search_paths[i]; i++) {
-            char test[512];
-            snprintf(test, sizeof(test), "%s/dac_stereo_q8.bin", search_paths[i]);
-            FILE *f = fopen(test, "rb");
-            if (f) { fclose(f); model_dir = search_paths[i]; break; }
-        }
-    }
+    const char *model_dir = find_model_dir();
+
 
     if (verbose) {
         fprintf(stderr, "TSAC-ng v%s\n", tsac_version());
@@ -212,30 +251,7 @@ int main(int argc, char **argv)
     if (trf_model_path)     fputs("Warning: --trf-model not yet implemented\n", stderr);
     if (batch_size)         fputs("Warning: --batch-size not yet implemented\n", stderr);
 
-    int ret = 0;
-    if (cmd[0] == 'c') {
-        if (verbose) fprintf(stderr, "Compressing %s -> %s\n", infile, outfile);
-        ret = tsac_compress_file(ctx, infile, outfile, n_codebooks);
-    } else if (cmd[0] == 'd') {
-        if (verbose) fprintf(stderr, "Decompressing %s -> %s\n", infile, outfile);
-        ret = tsac_decompress_file(ctx, infile, outfile);
-    } else if (cmd[0] == 't') {
-        if (verbose) fprintf(stderr, "Round-trip test: %s -> (compress) -> (decompress) -> %s\n",
-                             infile, outfile);
-        char tmp_path[] = "/tmp/tsac_rt_XXXXXX";
-        int tmp_fd = mkstemp(tmp_path);
-        if (tmp_fd < 0) {
-            fprintf(stderr, "Error: cannot create temp file\n");
-            tsac_free(ctx);
-            return 1;
-        }
-        close(tmp_fd);
-        ret = tsac_compress_file(ctx, infile, tmp_path, n_codebooks);
-        if (ret == TSAC_OK)
-            ret = tsac_decompress_file(ctx, tmp_path, outfile);
-        if (remove(tmp_path) != 0 && verbose)
-            fputs("Warning: failed to remove temp file\n", stderr);
-    }
+    int ret = execute_command(ctx, cmd, infile, outfile, n_codebooks, verbose);
 
     if (ret != TSAC_OK) {
         fprintf(stderr, "Error: operation failed (code %d)\n", ret);
