@@ -1,3 +1,4 @@
+/* dac_model.c — dac model for tsac-ng. */
 #include "dac_model.h"
 /* Wrapper around cpu_decoder.c for decoder dispatch. */
 #include "model_loader.h"

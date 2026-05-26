@@ -1,3 +1,4 @@
+/* model_loader.c — model loader for tsac-ng. */
 #include "model_loader.h"
 #include <stdio.h>
 #include <stdlib.h>

@@ -113,6 +113,7 @@ void tsac_free(TSACContext *ctx)
     free(ctx);
 }
 
+/* Compress float32 PCM audio to TXC codebook indices. */
 int tsac_compress(TSACContext *ctx,
                   const float *pcm, int n_samples, int channels,
                   uint8_t **out_data, size_t *out_size,
