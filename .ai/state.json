@@ -1,5 +1,5 @@
 {
-  "updated": "2026-05-26 20:09:00",
+  "updated": "2026-05-26 20:32:56",
   "quality_score": "86.85",
   "rounds_completed": [
     79,
@@ -8,7 +8,12 @@
     82,
     83,
     84,
-    85
+    85,
+    86,
+    87,
+    88,
+    89,
+    90
   ],
   "key_findings": {
     "is_ct_regression": {
@@ -52,6 +57,24 @@
       "codebook_architecture": "[8,1024] entries with in_proj coeffs",
       "back_solve_recon_error": "97.7% \u2014 libnc RVQ outside 8-dim subspace",
       "is_ct_fix_lost": "re-applied after git checkout reversion"
+    },
+    "final_status": {
+      "rms": 0.641,
+      "rms_db": -3.86,
+      "reference_rms": 0.203,
+      "gap_db": 9.99,
+      "waveform_correlation": 0.002,
+      "is_ct_fixed": true,
+      "bf8_formula": "(byte-128)*scale/127 (best known)",
+      "quality_score": 86.85
+    },
+    "ld_preload": {
+      "working": true,
+      "nc_convert_calls": 300,
+      "in_proj_captured": 6,
+      "bf8_formula_solved": false,
+      "bf8_correlation": 0.016,
+      "nc_convert_from_old_bf_calls": 0
     }
   },
   "quality_tools": {
