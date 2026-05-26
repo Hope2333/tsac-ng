@@ -1,5 +1,5 @@
 {
-  "updated": "2026-05-26 17:05:46",
+  "updated": "2026-05-26 20:09:00",
   "quality_score": "86.85",
   "rounds_completed": [
     79,
@@ -7,13 +7,14 @@
     81,
     82,
     83,
-    84
+    84,
+    85
   ],
   "key_findings": {
     "is_ct_regression": {
       "commit": "6119c3c",
       "change": "added d0!=d2 guard",
-      "impact": "RMS 0.641→0.080 (-3.86→-21.99 dBFS)",
+      "impact": "RMS 0.641\u21920.080 (-3.86\u2192-21.99 dBFS)",
       "fix": "reverted to (bias && bias->dims[0] == d0)",
       "verification": "RMS restored to 0.641"
     },
@@ -36,7 +37,7 @@
       "note": "BF8 decoding happens BEFORE this function in call chain"
     },
     "mogera_audio": {
-      "source": "test-simples/ぷらぷらうんじ.opus",
+      "source": "test-simples/\u3077\u3089\u3077\u3089\u3046\u3093\u3058.opus",
       "format": "48000Hz stereo Opus, 09:28-3:15:20",
       "slices_created": [
         "30s",
@@ -45,16 +46,22 @@
         "5s"
       ],
       "txc_created": true
+    },
+    "bf8_investigation": {
+      "nc_convert_not_called": "dequant happens at load time, not decode",
+      "codebook_architecture": "[8,1024] entries with in_proj coeffs",
+      "back_solve_recon_error": "97.7% \u2014 libnc RVQ outside 8-dim subspace",
+      "is_ct_fix_lost": "re-applied after git checkout reversion"
     }
   },
   "quality_tools": {
     "fuck-u-code": "86.85 (unchanged)",
-    "time-complexity": "dequant_weights O(n³) amortized, decode_batch hotspot",
-    "codewrench": "52 warnings — all C false positives (printf/memcpy in strings category)"
+    "time-complexity": "dequant_weights O(n\u00b3) amortized, decode_batch hotspot",
+    "codewrench": "52 warnings \u2014 all C false positives (printf/memcpy in strings category)"
   },
   "blockers": [
     "BF8 dequant formula (grouped BF8 decode) needs to be compared with libnc",
-    "GDB capture of actual libnc output unreliable — need LD_PRELOAD approach",
+    "GDB capture of actual libnc output unreliable \u2014 need LD_PRELOAD approach",
     "Original binary at /usr/lib/tsac/tsac, libnc at /usr/lib/tsac/libnc.so"
   ],
   "next_rounds": [
