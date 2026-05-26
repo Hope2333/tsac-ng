@@ -57,6 +57,7 @@ typedef struct {
     void (*kernel)(float*,const float*,const float*,const float*,int,int,int,int);
 } Conv1dJob;
 
+/* Thread worker: conv1d over a slice of output channels. */
 static void *conv1d_thread(void *arg) {
     Conv1dJob *j = (Conv1dJob *)arg;
     int Co_sub = j->oc_end - j->oc_start;
@@ -72,6 +73,8 @@ static void *conv1d_thread(void *arg) {
 }
 
 /* Parallel conv1d: split output channels across threads */
+/* Parallel conv1d: split output channels across threads.
+ * Calls kernel function pointer for actual computation. */
 static void conv1d_parallel(void (*kern)(float*,const float*,const float*,const float*,int,int,int,int),
                             float *o, const float *x, const float *w, const float *b,
                             int T, int K, int Ci, int Co, int n_threads)
@@ -106,6 +109,7 @@ typedef struct {
     void (*kernel)(float*,const float*,const float*,int,int,int,int,int,int);
 } Convt1dJob;
 
+/* Thread worker: convtranspose1d over a slice of output channels. */
 static void *convt1d_thread(void *arg) {
     Convt1dJob *j = (Convt1dJob *)arg;
     int Co_sub = j->oc_end - j->oc_start;
@@ -119,6 +123,7 @@ static void *convt1d_thread(void *arg) {
     return NULL;
 }
 
+/* Parallel convtranspose1d: split output channels across threads. */
 static void convt1d_parallel(void (*kern)(float*,const float*,const float*,int,int,int,int,int,int),
                              float *o, const float *x, const float *w,
                              int Ti, int To, int K, int Ci, int Co, int stride, int n_threads)
@@ -153,6 +158,7 @@ typedef struct {
     int C;
 } SnakeJob;
 
+/* Thread worker: snake activation over a slice of channels. */
 static void *snake_thread(void *arg) {
     SnakeJob *j = (SnakeJob *)arg;
     for (int i = j->start; i < j->end; i++) {
@@ -164,6 +170,7 @@ static void *snake_thread(void *arg) {
     return NULL;
 }
 
+/* Parallel snake activation: x + sin^2(alpha*x)/alpha per element. */
 static void snake_parallel(float *o, const float *x, const float *a, int n, int C, int n_threads) {
     if (n_threads <= 1 || n < n_threads * 1024) {
         snake_s(o, x, a, n, C);
@@ -191,6 +198,7 @@ typedef struct {
     const float *x, *y;
 } AddJob;
 
+/* Thread worker: element-wise addition (used for residual connections). */
 static void *add_thread(void *arg) {
     AddJob *j = (AddJob *)arg;
     for (int i = j->start; i < j->end; i++)
@@ -198,6 +206,7 @@ static void *add_thread(void *arg) {
     return NULL;
 }
 
+/* Parallel element-wise addition: o = x + y. */
 static void add_parallel(float *o, const float *x, const float *y, int n, int n_threads) {
     if (n_threads <= 1 || n < n_threads * 2048) {
         for (int i = 0; i < n; i++) o[i] = x[i] + y[i];
@@ -294,6 +303,7 @@ void conv1d_s(float *o, const float *x, const float *w, const float *b,
         }
 }
 
+/* Scalar dilated conv1d: supports stride > 1 for temporal reduction. */
 static void conv1d_dilated_s(float *o, const float *x, const float *w, const float *b,
                              int T, int K, int Ci, int Co, int dilation) {
     int P = (K/2) * dilation;
@@ -309,6 +319,7 @@ static void conv1d_dilated_s(float *o, const float *x, const float *w, const flo
         }
 }
 
+/* Scalar strided conv1d (deprecated, use dilated_s for new code). */
 static void conv1d_strided_s(float *o, const float *x, const float *w, const float *b,
                               int T_in, int T_out, int K, int Ci, int Co, int stride) {
     int P = K/2; memset(o, 0, (size_t)Co * T_out * sizeof(float));
@@ -767,6 +778,7 @@ typedef struct {
 } CPUOps;
 
 /* Dispatch function — picks the best SIMD level at runtime via CPUID */
+/* Runtime CPU dispatch: select best SIMD kernel set for this CPU. */
 static CPUOps get_ops(void) {
     CPUOps ops = { conv1d_s, convt1d_s, gn_s, snake_s, NULL };
     
@@ -840,6 +852,10 @@ static CPUOps get_ops(void) {
 /*  BF8 Dequantization                                              */
 /* ================================================================ */
 
+/* Dequantize BF8/float32 weight tensor with L2 normalization.
+ * Handles 3 formats: float32, uint8, grouped BF8 with scale bytes.
+ * Detects convtranspose via is_ct flag (bias dims match).
+ * Output layout: [Co, Ci, K] for all conv types. */
 float *dequant_weights(const DACTensor *weight_v, const DACTensor *weight_g,
                                const DACTensor *bias,
                                int *out_Ci, int *out_K, int *out_Co, int *is_conv_transpose) {
@@ -949,6 +965,9 @@ static int count_nan(const float *data, int n) {
 }
 #endif
 
+/* Decode one batch of codebook indices through the full DAC graph.
+ * RVQ lookup → model.0 conv1d → 4× ResidualBlock → model.5 snake → model.6 conv1d → tanh.
+ * Returns TSAC_OK or error code. */
 static int decode_batch(DACTensor *ts, int nt,
                         const int *codes, int n_cb, int code_offset,
                         int ctx_frames, int n_threads,
@@ -1254,6 +1273,8 @@ static int decode_batch(DACTensor *ts, int nt,
     return TSAC_OK;
 }
 
+/* CPU decoder entry point: decode TXC indices to float32 PCM.
+ * Handles batching, threading, and the full DAC decode graph. */
 int cpu_decoder_run(DACTensor *ts, int nt,
                      const int *codes, int n_frames, int n_cb,
                      float *pcm, int n_samples, int ch,
@@ -1315,6 +1336,8 @@ int cpu_decoder_run(DACTensor *ts, int nt,
 /*  CPU Encoder                                                      */
 /* ================================================================ */
 
+/* CPU encoder entry point: encode float32 PCM to TXC indices.
+ * NOTE: strided convs not yet implemented — partial functionality. */
 int cpu_encoder_run(DACTensor *ts, int nt,
                     const float *pcm, int n_samples, int channels,
                     int n_codebooks, int block_len,
