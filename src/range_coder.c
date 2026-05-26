@@ -8,6 +8,7 @@
 
 #include "range_coder.h"
 
+/* Ensure range is above minimum threshold after bit consumption. */
 static void rc_normalize(RangeCoder *rc)
 {
     while (rc->range <= RC_MIN_VALUE) {

@@ -8,6 +8,7 @@
 #define MAGIC_HDR 0x23f4aefb
 #define MAGIC_TNS 0x23f4aefa
 
+/* Load a .bin model file into a DACModel structure. */
 int model_loader_load(const char *path, DACModel *model)
 {
     if (!path || !model) return TSAC_ERR_PARAM;
@@ -103,6 +104,7 @@ int model_loader_load(const char *path, DACModel *model)
     return TSAC_OK;
 }
 
+/* Release all memory held by a DACModel. */
 void model_loader_free(DACModel *model)
 {
     if (!model || !model->tensors) return;
