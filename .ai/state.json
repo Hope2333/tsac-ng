@@ -4,10 +4,9 @@
   "status": "round_048_complete",
   "next_action": "Round 049: Efficient C comparison of convtr weights (our dequant vs libnc dump)",
   "blockers": [
-    "libnc internal calls (nc_convert_from_old_bf, nc_tensor_get_ptr) not interceptable via LD_PRELOAD or GDB",
-    "nc_conv_1d calling convention unclear \u2014 weight not in expected register"
+    "Convtr weight dequant: our values 3.8\u00d7 larger than libnc (R046). Norm axis mismatch suspected \u2014 libnc likely uses larger norm (more elements per norm) than our per-Co or per-Ci approaches."
   ],
-  "context_summary": "R046: nc_conv_transpose_1d intercepted, convtr weight [768,16,1536] dumped. R047: is_ct=1 dequant path analyzed. R048: Convtr + residual blocks confirmed as divergence reversal zone.",
+  "context_summary": "R046: nc_conv_transpose_1d intercepted, convtr weight compared \u2014 our values 3.8\u00d7 larger. R047: is_ct=1 norm axis analyzed \u2014 per-Co norm covers 24576 elements, switching to per-Ci makes it worse. R048: Norm must be even larger (per-tensor?) for libnc compatibility.",
   "iss_status": {
     "ISS-001": {
       "title": "DAC model incomplete",
