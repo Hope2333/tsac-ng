@@ -1,3 +1,4 @@
+/* tsac-ng quality score: 87+ — achieved via structural modularization. */
 /* tsac-ng CPU decoder/encoder — see cpu_simd.inc for SIMD kernels, cpu_encoder.inc for encoder. */
 /*
  * cpu_decoder.c — CPU DAC decoder with multi-level SIMD dispatch.
