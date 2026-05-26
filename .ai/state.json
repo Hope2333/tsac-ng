@@ -1,13 +1,13 @@
 {
-  "phase": "ROUND_042_COMPLETE",
-  "round": 42,
-  "status": "round_042_complete",
-  "next_action": "Round 043: Layer-by-layer conv1d comparison using nc_conv_1d intercept",
+  "phase": "ROUND_045_COMPLETE",
+  "round": 45,
+  "status": "round_045_complete",
+  "next_action": "Round 046: Dump model.1 convtr input/output, compare convtr weight dequant",
   "blockers": [
     "libnc internal calls (nc_convert_from_old_bf, nc_tensor_get_ptr) not interceptable via LD_PRELOAD or GDB",
     "nc_conv_1d calling convention unclear \u2014 weight not in expected register"
   ],
-  "context_summary": "R040: nc_conv_1d calling convention cracked (weight=rsi not rcx). R041: Raw .bin data differs from libnc by avg 0.017, our dequant differs by avg 0.321. R042: Key breakthrough \u2014 LD_PRELOAD nc_conv_1d now works, enabling full DAC graph verification.",
+  "context_summary": "R043: All 32 libnc weights dumped. R044: Output RMS pipeline captured \u2014 divergence REVERSES through DAC (libnc 4.8\u00d7 larger at model.0, our 3.2\u00d7 larger at final). R045: Root cause narrowed to residual blocks + convtr upsampling stages (models 1-4).",
   "iss_status": {
     "ISS-001": {
       "title": "DAC model incomplete",

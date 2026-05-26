@@ -127,3 +127,18 @@ Round 033: in_proj+out_proj implemented (57fd801). RMS unchanged — BF8 dequant
 - Synthesis: nc_conv_1d intercept breakthrough unlocks layer-by-layer comparison
 - Created handoff for R043
 - Next: dump all 32 conv1d weights and inputs/outputs for LBL RMS tracking
+
+# ROUND 043 (2026-05-26)
+- Dumped ALL 32 libnc conv1d weights via LD_PRELOAD nc_conv_1d
+- DAC graph confirmed: 6 RVQ + 1 model.0 + 6 model.1 + 6 model.2 + 6 model.3 + 6 model.4 + 1 model.6 = 32
+- Weight dims match expected architecture
+
+# ROUND 044 (2026-05-26)
+- Captured libnc conv1d OUTPUT tensors with full-tensor RMS
+- Our model.0 conv1d output captured: RMS=0.609 (libnc=2.901)
+- Key finding: divergence REVERSES through DAC pipeline
+
+# ROUND 045 (2026-05-26)
+- Divergence reversal identified: libnc larger at model.0, our larger at final
+- Root cause narrowed to residual blocks + convtr (models 1-4)
+- Next: verify convtr weight dequant (is_ct=1 path)

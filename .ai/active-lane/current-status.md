@@ -1,13 +1,13 @@
 # Current Status
 
-**Phase**: ROUND_042_COMPLETE → ROUND_043_PENDING
+**Phase**: ROUND_045_COMPLETE → ROUND_046_PENDING
 **Date**: 2026-05-26
 
 ## Active Issues
 - **ISS-011**: Decoder WAV mismatch — BF8 dequant formula verified, group structure/conv kernel remain open
 - **ISS-013**: Normal TXC not supported — format documented, implementation deferred
 
-## Next Round: 043
+## Next Round: 046
 Conv1d layer-by-layer output comparison via GDB to isolate which layer first diverges.
 
 ## Key Evidence
