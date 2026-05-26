@@ -110,3 +110,20 @@ Round 033: in_proj+out_proj implemented (57fd801). RMS unchanged — BF8 dequant
 - Code quality pass: fuck-u-code 69.55/100, CodeWrench 518 warnings (mostly C false positives)
 - Time-complexity MCP: does not support .c files
 - Decision: acceptable for RE phase; defer cleanup to post-RMS-fix round
+
+# ROUND 040 (2026-05-26)
+- BREAKTHROUGH: disassembled nc_conv_1d @ 0x70d40, found correct signature
+- Weight is rsi (2nd arg), NOT rcx (4th arg) as previously assumed
+- Correct LD_PRELOAD intercept dumps first weight: [8,1,1024] = 8192 floats
+- 32 calls per batch confirmed, int args decoded (stride/pad/dilation/groups)
+
+# ROUND 041 (2026-05-26)
+- Raw .bin float32 vs libnc converted: avg_diff=0.017, ratio=1.128
+- Our dequantized vs libnc: avg_diff=0.321 — our norm/gain computation differs
+- Layout difference: our [Co,Ci,K] vs libnc [Ci,K,Co] — both internally consistent
+- Decision: norm computation difference is the root cause of weight mismatch
+
+# ROUND 042 (2026-05-26)
+- Synthesis: nc_conv_1d intercept breakthrough unlocks layer-by-layer comparison
+- Created handoff for R043
+- Next: dump all 32 conv1d weights and inputs/outputs for LBL RMS tracking
