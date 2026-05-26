@@ -1,13 +1,13 @@
 {
-  "phase": "ROUND_039_COMPLETE",
-  "round": 39,
-  "status": "round_039_complete",
-  "next_action": "Round 040: conv1d kernel comparison \u2014 GDB capture conv1d inputs/outputs layer by layer",
+  "phase": "ROUND_042_COMPLETE",
+  "round": 42,
+  "status": "round_042_complete",
+  "next_action": "Round 043: Layer-by-layer conv1d comparison using nc_conv_1d intercept",
   "blockers": [
     "libnc internal calls (nc_convert_from_old_bf, nc_tensor_get_ptr) not interceptable via LD_PRELOAD or GDB",
     "nc_conv_1d calling convention unclear \u2014 weight not in expected register"
   ],
-  "context_summary": "R037: libnc weight dump blocked. R038: BF8 dequant formula verified correct (9 variants tested, none match reference). R039: RMS root cause synthesized \u2014 dequant excluded, conv1d/tanh/RVQ summation are top suspects.",
+  "context_summary": "R040: nc_conv_1d calling convention cracked (weight=rsi not rcx). R041: Raw .bin data differs from libnc by avg 0.017, our dequant differs by avg 0.321. R042: Key breakthrough \u2014 LD_PRELOAD nc_conv_1d now works, enabling full DAC graph verification.",
   "iss_status": {
     "ISS-001": {
       "title": "DAC model incomplete",
@@ -151,6 +151,12 @@
       "status": "CONFIRMED_BLOCKED",
       "note": "nc_convert_from_old_bf fused op blocked by thread-heavy libnc init",
       "round": 34
+    },
+    "nc_conv_1d": {
+      "status": "CRACKED",
+      "signature": "void *nc_conv_1d(output, weight, input, stride?, pad?, dilation?, groups?)",
+      "evidence": "/tmp/preload_correct.log",
+      "weight_dump": "/tmp/libnc_conv1.bin"
     }
   }
 }
