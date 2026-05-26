@@ -58,7 +58,7 @@ static void print_usage(const char *prog)
 
 /* Find the first directory containing dac_stereo_q8.bin.
  * Searches common install locations including Termux paths. */
-static const char *find_model_dir(void) {
+static const char *find_model_dir_(void) {
     static const char *search_paths[] = {
         "models/tsac",
         "/usr/share/tsac",
@@ -71,7 +71,7 @@ static const char *find_model_dir(void) {
         char test[512];
         snprintf(test, sizeof(test), "%s/dac_stereo_q8.bin", search_paths[i]);
         FILE *f = fopen(test, "rb");
-        if (f) { fclose(f); return search_paths[i]; }
+        if (f) { (void)fclose(f); return search_paths[i]; }
     }
     return "/usr/share/tsac";  /* fallback */
 }
@@ -99,7 +99,7 @@ static int execute_command(TSACContext *ctx, const char *cmd,
             fprintf(stderr, "Error: cannot create temp file\n");
             return 1;
         }
-        close(tmp_fd);
+        (void)close(tmp_fd);
         ret = tsac_compress_file(ctx, infile, tmp_path, n_codebooks);
         if (ret == TSAC_OK)
             ret = tsac_decompress_file(ctx, tmp_path, outfile);
@@ -222,7 +222,7 @@ int main(int argc, char **argv)
     if (use_llvm)   { backend = TSAC_BACKEND_LLVM;   backend_name = "LLVM JIT"; }
 
     /* Determine model directory */
-    const char *model_dir = find_model_dir();
+    const char *model_dir = find_model_dir_();
 
 
     if (verbose) {
