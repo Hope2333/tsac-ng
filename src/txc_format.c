@@ -61,6 +61,7 @@ static const uint32_t crc32_table[256] = {
     0xAFB010B1, 0xAB710D06, 0xA6322BDF, 0xA2F33668, 0xBCB4666D, 0xB8757BDA, 0xB5365D03, 0xB1F740B4
 };
 
+/* CRC32 computation: polynomial 0x04C11DB7, shift-left, non-reflected. */
 static uint32_t crc32(const uint8_t *data, size_t len, uint32_t crc) {
     for (size_t i = 0; i < len; i++) {
         uint8_t idx = (uint8_t)(crc >> 24) ^ data[i];
@@ -69,12 +70,14 @@ static uint32_t crc32(const uint8_t *data, size_t len, uint32_t crc) {
     return crc;
 }
 
+/* Read a big-endian uint32 from a byte buffer. */
 static uint32_t read_be32(const uint8_t *p)
 {
     return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
            ((uint32_t)p[2] << 8) | (uint32_t)p[3];
 }
 
+/* Locate TXC header boundary in 16-bit format. */
 static int find_header_end_int16(const uint8_t *data, size_t data_size, int n_codebooks)
 {
     int stride = n_codebooks * 2;
@@ -85,6 +88,7 @@ static int find_header_end_int16(const uint8_t *data, size_t data_size, int n_co
     return 0;
 }
 
+/* Locate TXC header boundary in 8-bit format. */
 static int find_header_end_uint8(const uint8_t *data, size_t data_size, int n_codebooks)
 {
     for (int h = 8; h < 256 && h < (int)data_size; h++) {
@@ -110,6 +114,7 @@ void txc_header_init(TSCHeader *hdr, int stereo, int n_codebooks, int sample_rat
     hdr->data_offset = sizeof(TSCHeader);
 }
 
+/* Serialize header + codebook indices into a TXC byte buffer. */
 int txc_write(const TSCHeader *hdr,
               const int *codebook_indices, int n_frames,
               uint8_t **out_data, size_t *out_size)
@@ -148,6 +153,7 @@ int txc_write(const TSCHeader *hdr,
     return TSAC_OK;
 }
 
+/* Parse a complete TXC byte buffer into header + codebook index array. */
 int txc_read(const uint8_t *data, size_t data_size,
              TSCHeader *hdr,
              int **codebook_indices, int *n_frames)

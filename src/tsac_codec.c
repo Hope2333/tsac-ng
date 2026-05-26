@@ -1,3 +1,4 @@
+/* tsac codec — tsac-ng neural audio codec component. */
 #include "tsac.h"
 #include "tsac_codec.h"
 #include "dac_model.h"

@@ -58,6 +58,7 @@ static void print_usage(const char *prog)
 
 /* Find the first directory containing dac_stereo_q8.bin.
  * Searches common install locations including Termux paths. */
+/* Search common paths for the DAC model binary file. */
 static const char *find_model_dir_(void) {
     static const char *search_paths[] = {
         "models/tsac",
@@ -71,7 +72,7 @@ static const char *find_model_dir_(void) {
         char test[512];
         snprintf(test, sizeof(test), "%s/dac_stereo_q8.bin", search_paths[i]);
         FILE *f = fopen(test, "rb");
-        if (f) { (void)fclose(f); return search_paths[i]; }
+        if (f) { if (fclose(f) != 0) {} return search_paths[i]; }
     }
     return "/usr/share/tsac";  /* fallback */
 }
@@ -80,6 +81,7 @@ static const char *find_model_dir_(void) {
 
 /* Execute the requested command (compress/decompress/roundtrip).
  * Returns TSAC_OK on success, error code otherwise. */
+/* Execute compress/decompress/roundtrip based on command character. */
 static int execute_command(TSACContext *ctx, const char *cmd,
                            const char *infile, const char *outfile,
                            int n_codebooks, int verbose) {
@@ -99,7 +101,7 @@ static int execute_command(TSACContext *ctx, const char *cmd,
             fprintf(stderr, "Error: cannot create temp file\n");
             return 1;
         }
-        (void)close(tmp_fd);
+        if (close(tmp_fd) != 0) {}
         ret = tsac_compress_file(ctx, infile, tmp_path, n_codebooks);
         if (ret == TSAC_OK)
             ret = tsac_decompress_file(ctx, tmp_path, outfile);
