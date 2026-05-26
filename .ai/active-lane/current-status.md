@@ -1,23 +1,11 @@
 # Current Status — TSAC Reverse Engineering
-
-## Active Lane: ROUND_090_COMPLETE
-
-### Status Summary
+## Active Lane: ROUND_093_COMPLETE
 | Metric | Value | Target |
 |--------|-------|--------|
 | RMS | 0.641 (-3.86 dBFS) | 0.203 (-13.85 dBFS) |
-| RMS gap | +9.99 dB | 0 dB |
-| WAV correlation | 0.002 | 1.000 |
-| Codebook index accuracy | 100% ✅ | 100% |
-| fuck-u-code | 86.85 | 87+ |
-| LD_PRELOAD | Working ✅ | - |
-| is_ct fix | Committed ✅ | - |
+| Correlation | 0.002 | 1.000 |
+| Quality | 86.85 | 87+ |
+| BF8 unit-norm corr | -0.005 | 1.000 |
 
-### Rounds 079-090 Complete
-12 rounds, ~32 tasks.
-
-### Blockers
-BF8 dequant formula: libnc's nc_convert(type=11) produces output that doesn't match any simple formula. Ground truth captured but formula remains unsolved.
-
-### Next
-Full reverse engineering of libnc nc_convert SIMD decode path (requires source-level access to libnc internals).
+### Rounds 079-093 Complete
+15 rounds, ~35 tasks. BF8 formula proven fundamentally divergent — requires nc_reduce_sum_sqr reverse engineering.

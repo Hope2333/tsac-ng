@@ -1,5 +1,5 @@
 {
-  "updated": "2026-05-26 20:32:56",
+  "updated": "2026-05-26 20:46:25",
   "quality_score": "86.85",
   "rounds_completed": [
     79,
@@ -13,7 +13,10 @@
     87,
     88,
     89,
-    90
+    90,
+    91,
+    92,
+    93
   ],
   "key_findings": {
     "is_ct_regression": {
@@ -75,6 +78,11 @@
       "bf8_formula_solved": false,
       "bf8_correlation": 0.016,
       "nc_convert_from_old_bf_calls": 0
+    },
+    "bf8_final": {
+      "unit_norm_correlation": -0.005,
+      "conclusion": "fundamentally different at element-value level",
+      "resolution": "reverse engineer nc_reduce_sum_sqr"
     }
   },
   "quality_tools": {
