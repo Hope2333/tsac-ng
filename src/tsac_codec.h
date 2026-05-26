@@ -1,3 +1,4 @@
+/* tsac_codec.h — Public API for TSAC neural audio codec. */
 #ifndef TSAC_CODEC_H
 #define TSAC_CODEC_H
 
