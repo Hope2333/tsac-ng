@@ -188,3 +188,33 @@ Round 033: in_proj+out_proj implemented (57fd801). RMS unchanged — BF8 dequant
 - Synthesis: after 54 rounds, model.0 dequant verified correct
 - Remaining gap: -21.99 vs -13.85 (8 dB)
 - Next: conv1d kernel comparison
+
+## Round 079 — 2026-05-26
+**Decision**: Revert is_ct d0!=d2 guard.
+**Rationale**: Bisection showed commit 6119c3c reduced RMS from 0.641 to 0.080 by excluding square inner blocks from convtr layout. HIP dequant uses (d0==Co) without this guard.
+**Impact**: RMS restored to 0.641.
+
+## Round 080 — 2026-05-26
+**Decision**: Apply permanent is_ct fix (bias->dims[0]==d0, no d0!=d2).
+**Rationale**: Inner residual blocks (768→768, 384→384, 192→192, 96→96) need convtr layout ([Co,K,Ci]) due to .bin file convention.
+**Impact**: RMS 0.641 stable. Verified against HIP dequant pattern.
+
+## Round 081 — 2026-05-26
+**Decision**: Accept 0.002 WAV correlation as ground truth.
+**Rationale**: Despite 0.641→0.203 RMS gap, the 0.002 correlation means the waveform is essentially noise. The is_ct fix improved magnitude but not content.
+**Impact**: Shift focus from magnitude to waveform correctness — root cause is BF8 dequant formula.
+
+## Round 082 — 2026-05-26
+**Decision**: Freeze quality optimization at 86.85.
+**Rationale**: Remaining bottlenecks (CC=36/100, param=4/100) require 4-10h function-level refactoring with ROI of 0.17%/h. Not worth pursuing while correctness is priority.
+**Impact**: Quality tools confirmed stable; effort directed to BF8 dequant.
+
+## Round 083 — 2026-05-26
+**Decision**: Use MOGRA audio for future GDB experiments.
+**Rationale**: RMS gap is independent of audio content (same 9.99 dB for MOGRA and short_fast.txc). MOGRA provides longer segments for more GDB data points.
+**Impact**: MOGRA slices saved for future rounds; not immediately actionable due to GDB complexity.
+
+## Round 084 — 2026-05-26
+**Decision**: Archive all disassembly and GDB evidence in docs/evidence/.
+**Rationale**: Successful GDB capture and complete disassembly chain (nc_convert + nc_convert_to_bf + nc_convert_from_old_bf) are critical for future analysis.
+**Impact**: Evidence preserved; nc_convert SIMD loop analysis deferred to Round 085.
