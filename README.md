@@ -1,10 +1,16 @@
 # tsac-ng — Neural Audio Codec (Multi-Backend)
 
-**tsac-ng v0.1.1** — Clean-room reimplementation of the TSAC neural audio codec.
+**tsac-ng v0.1.1** — Reverse-engineered, AI-augmented reimplementation of the TSAC neural audio codec.
 Compatible with the `.txc` container format and `.bin` model files.
 
+> **🤖 AI-Assisted Development**: This project was built by a single developer
+> working with AI coding assistants across 51 investigation rounds.
+> Architecture, ground-truth extraction (GDB/objdump), and verification were
+> human-led; implementation was AI-augmented. See [METHODOLOGY.md](.ai/METHODOLOGY.md)
+> for the full story.
+>
 > Relationship to TSAC: Like Linux to Unix — same ecosystem compatibility,
-> built from scratch with zero shared code.
+> zero shared code. Not a port. Not a wrapper. A from-scratch reconstruction.
 
 ---
 
@@ -20,7 +26,7 @@ Compatible with the `.txc` container format and `.bin` model files.
 | **CPU decoder (DAC)** | ✅ | 32 conv1d/29 snake/4 convtr verified via GDB |
 | **CPU encoder** | 🔧 | Architecture correct, needs strided convs |
 
-### What We Know (23 Rounds of Deep Reverse Engineering)
+### What We Know (51 Rounds of AI-Augmented Investigation)
 
 - **Fast TXC format**: 10-bit fixed-width bit packing (NOT arithmetic range coding). Algorithm: `bswap + shr(22-(bp&7)) + and 0x3FF`. Verified 54/54 indices against original GDB ground truth.
 - **Normal TXC format**: n_blocks in BE uint32 at bytes 8-11, payload at byte 16, CRC32 at end.
@@ -140,7 +146,57 @@ Options (compatible with original tsac):
 ## Roadmap
 
 See [.ai/ROADMAP.md](.ai/ROADMAP.md) for detailed milestone planning.
-Current phase: **ROUND_036_COMPLETE** (~60% overall completion).
+Current phase: **ROUND_051_COMPLETE** (~70% overall completion).
+
+## Development Methodology
+
+This is an **AI-augmented reverse engineering** project. The workflow:
+
+```
+Human extracts ground truth           AI generates implementation
+(GDB breakpoints, objdump,           (C code matching the spec,
+ LD_PRELOAD intercepts,              SIMD intrinsics, GPU kernels,
+ hex dumps, WAV comparison)          CMake build system)
+        │                                      │
+        └────────────┬─────────────────────────┘
+                     ▼
+            Compile → Test → Compare RMS
+                     │
+        ┌────────────┴────────────┐
+        │                         │
+    RMS matches?              RMS differs?
+        │                         │
+    Commit ✅                Read error → Craft better prompt → Loop
+```
+
+**What this means in practice**:
+- The 10-bit TXC parser, CRC32, range coder, and DAC graph architecture were
+  **manually reverse-engineered** from the original binary using GDB and objdump
+- The SIMD kernels (AVX-512, AVX2, NEON, SVE, RVV), GPU backends (CUDA, HIP, Vulkan),
+  and build system were **AI-generated** from architecture specifications
+- Every round's deliverable was **verified by the human** against ground truth
+  (GDB-captured indices, libnc weight dumps, WAV RMS comparison)
+- Bugs like the is_ct false positive (found in Round 049) took 48 rounds to surface
+  precisely because the AI-generated code was plausible but subtly wrong —
+  only systematic cross-validation caught it
+
+**Why this approach?** A single developer cannot simultaneously:
+1. Reverse-engineer a closed-source binary's wire format
+2. Implement 5 SIMD levels across 3 CPU architectures
+3. Write 3 GPU backends from scratch
+4. Debug numerical precision issues across a 32-layer neural network
+
+But a developer + AI can. The developer does the irreplaceable human work
+(understanding the binary, designing verification strategies, judging correctness);
+the AI does the replaceable work (generating SIMD intrinsics, wiring up CMake,
+filling in boilerplate).
+
+**Honest caveats**:
+- Some AI-generated code works on the happy path but hasn't been tested on edge cases
+- The residual -3.4dB RMS error exists because the AI-generated dequant formula
+  doesn't match libnc's fused operation — and neither human nor AI has cracked this yet
+- Code review happened through compilation + testing, not line-by-line human review
+- Open an issue if you find something weird — it might be an AI hallucination
 
 ## License
 
