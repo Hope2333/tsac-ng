@@ -1,31 +1,28 @@
-# Round 050 — Convtr Norm Loop Fix Attempted
+# Round 050 — Convtr Norm Loop Verified Correct (Oracle Finding)
 
 **Date**: 2026-05-26
-**Status**: Investigated (fix attempted, needs debugging)
+**Status**: Verified correct — no fix needed
 
-## Goal
-Fix the norm accumulation loop for is_ct=1 tensors to use the correct [Co,K,Ci] indexing instead of [Ci,K,Co].
-
-## Attempted Fix
-```c
-if (is_ct) {
-    // ConvTranspose: [Co,K,Ci] layout, norms per Ci
-    src_idx = i2 * K * d0 + k * d0 + i0;
-    norms[i0] += v * v;
-} else {
-    // Regular: [Ci,K,Co] layout, norms per Co
-    src_idx = i0 * K * d2 + k * d2 + i2;
-    norms[i2] += v * v;
-}
+## Oracle Review
+The norm loop "fix" attempted in R050 was WRONG. The current norm loop:
 ```
+for (i0, k, i2) → src_idx = i0*K*d2 + k*d2 + i2 → norms[i2]
+```
+is axis-correct WITHOUT branching:
+- Conv1d (stored [Ci,K,Co], is_ct=0): d0=Ci, d2=Co → norms per output channel ✓
+- Convtr (stored [Co,K,Ci], is_ct=1): d0=Co, d2=Ci → norms per input channel ✓
 
-## Result
-Output saturated (RMS=1.000). The fix produces norm values that are too small (per-Ci with 12288 elements vs per-Co with 24576 elements), making weights too large. 
+Both match PyTorch weight_norm(dim=0) semantics. The R050 transposition attempt broke this.
 
-## Analysis
-Per-Ci norms (avg=12,405) are ~1.4× smaller than per-Co norms (avg=17,467), making weights ~1.4× larger. This alone doesn't explain saturation. The issue may be in how src_f32 is populated or index arithmetic.
+## weight_g Verification (BLOCKER-2)
+All convtr weight_g→dims[2] confirmed to equal Ci:
+- model.1: 1536 ✓, model.2: 768 ✓, model.3: 384 ✓, model.4: 192 ✓
+- No OOB risk. norm_channels always ≥ Ci.
 
-## Next
-- Debug with smaller tensor to verify indexing
-- Check if d0/d2 swap affects norm loop iteration ranges
-- Consider alternative: apply weight_g BEFORE norm rather than after
+## Layer-by-layer after fix (BLOCKER-1)
+| Layer | Our RMS | libnc RMS | Ratio |
+|-------|---------|-----------|-------|
+| model.0 | 0.609 | 2.901 | libnc 4.8× larger |
+| final WAV | 0.080 | 0.203 | libnc 2.5× larger |
+
+Direction reversed from pre-fix (was our 3.2× larger). Remaining gap: need 2.5× more gain.
