@@ -1,12 +1,12 @@
 {
-  "phase": "ROUND_048_COMPLETE",
-  "round": 48,
-  "status": "round_048_complete",
-  "next_action": "Round 049: Efficient C comparison of convtr weights (our dequant vs libnc dump)",
+  "phase": "ROUND_051_COMPLETE",
+  "round": 51,
+  "status": "round_051_complete",
+  "next_action": "Round 052: Debug convtr norm loop \u2014 identify why per-Ci norm fix saturates",
   "blockers": [
     "Convtr weight dequant: our values 3.8\u00d7 larger than libnc (R046). Norm axis mismatch suspected \u2014 libnc likely uses larger norm (more elements per norm) than our per-Co or per-Ci approaches."
   ],
-  "context_summary": "R046: nc_conv_transpose_1d intercepted, convtr weight compared \u2014 our values 3.8\u00d7 larger. R047: is_ct=1 norm axis analyzed \u2014 per-Co norm covers 24576 elements, switching to per-Ci makes it worse. R048: Norm must be even larger (per-tensor?) for libnc compatibility.",
+  "context_summary": "R049: is_ct false positive bug found and fixed (d0!=d2 check). RMS -3.86\u2192-21.99 dBFS, direction reversed. R050: Convtr norm loop fix attempted but saturation \u2014 needs debugging. R051: Partial fix committed, 8 dB gap remains.",
   "iss_status": {
     "ISS-001": {
       "title": "DAC model incomplete",
