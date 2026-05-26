@@ -92,6 +92,8 @@ TSACContext *tsac_init(TSACBackend backend, int n_threads, const char *model_pat
     return ctx;
 }
 
+/* Release all resources held by a TSAC context.
+ * Safe to call with NULL. */
 void tsac_free(TSACContext *ctx)
 {
     if (!ctx) return;
@@ -166,6 +168,9 @@ int tsac_compress(TSACContext *ctx,
     return ret;
 }
 
+/* Decode a TXC byte buffer into float32 PCM.
+ * Returns TSAC_OK on success, error code otherwise.
+ * Caller must free *out_pcm. */
 int tsac_decompress(TSACContext *ctx,
                     const uint8_t *txc_data, size_t txc_size,
                     float **out_pcm, int *out_samples, int *out_channels)
@@ -233,6 +238,8 @@ int tsac_decompress(TSACContext *ctx,
     return TSAC_OK;
 }
 
+/* Compress a WAV file to TXC format.
+ * Reads PCM from in_wav, encodes with n_codebooks, writes to out_txc. */
 int tsac_compress_file(TSACContext *ctx, const char *in_wav, const char *out_txc, int n_codebooks)
 {
     if (!ctx || !in_wav || !out_txc)
@@ -361,6 +368,8 @@ int tsac_compress_file(TSACContext *ctx, const char *in_wav, const char *out_txc
     return ret;
 }
 
+/* Decompress a TXC file to WAV.
+ * Reads TXC from in_txc, decodes with DAC model, writes float32 PCM WAV to out_wav. */
 int tsac_decompress_file(TSACContext *ctx, const char *in_txc, const char *out_wav)
 {
     if (!ctx || !in_txc || !out_wav)

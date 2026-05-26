@@ -206,11 +206,11 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    (void)separate_channels;
-    (void)force_channels;
-    (void)fast_mode;
-    (void)trf_model_path;
-    (void)batch_size;
+    if (separate_channels)  fputs("Warning: --separate-channels not yet implemented\n", stderr);
+    if (force_channels)     fputs("Warning: --force-channels not yet implemented\n", stderr);
+    if (fast_mode)          fputs("Warning: --fast (transformer) mode not yet implemented\n", stderr);
+    if (trf_model_path)     fputs("Warning: --trf-model not yet implemented\n", stderr);
+    if (batch_size)         fputs("Warning: --batch-size not yet implemented\n", stderr);
 
     int ret = 0;
     if (cmd[0] == 'c') {
@@ -233,7 +233,8 @@ int main(int argc, char **argv)
         ret = tsac_compress_file(ctx, infile, tmp_path, n_codebooks);
         if (ret == TSAC_OK)
             ret = tsac_decompress_file(ctx, tmp_path, outfile);
-        remove(tmp_path);
+        if (remove(tmp_path) != 0 && verbose)
+            fputs("Warning: failed to remove temp file\n", stderr);
     }
 
     if (ret != TSAC_OK) {
