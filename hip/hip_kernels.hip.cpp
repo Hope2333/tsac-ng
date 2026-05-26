@@ -1,3 +1,4 @@
+/* hip_kernels.hip.cpp — HIP/ROCm GPU backend for tsac-ng. */
 /*
  * hip_kernels.hip.cpp — HIP kernels for TSAC neural network inference.
  *

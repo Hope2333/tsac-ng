@@ -1,3 +1,4 @@
+/* hip_arch.hip.cpp — HIP/ROCm GPU backend for tsac-ng. */
 #include "tsac_codec.h"
 #include "dac_model.h"
 #include <hip/hip_runtime.h>

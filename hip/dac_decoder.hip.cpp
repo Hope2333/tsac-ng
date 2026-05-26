@@ -1,3 +1,4 @@
+/* dac_decoder.hip.cpp — HIP/ROCm GPU backend for tsac-ng. */
 #include <hip/hip_runtime.h>
 #include "../src/dac_model.h"
 #include "../include/tsac.h"
@@ -177,11 +178,13 @@ __global__ void rvq_subtract_k(float *features, const float *codebook,
 /*  CPU-side tensor finder and weight upload                         */
 /* ================================================================ */
 
+/* Look up a tensor by name in the tensor array. */
 static DACTensor *F(DACTensor *ts, int n, const char *s) {
     for (int i = 0; i < n; i++) if (!strcmp(ts[i].name, s)) return &ts[i];
     return NULL;
 }
 
+/* Upload a float32 tensor to GPU memory via HIP stream. */
 static float *upload_f32(DACTensor *t, hipStream_t st, DACTensor *ts, int nt, DACTensor *bias_t) {
     if (!t || !t->data) return NULL;
     if (t->dev_f32) return t->dev_f32;
@@ -276,6 +279,7 @@ typedef struct {
     hipStream_t  stream;
 } HipBackend;
 
+/* Release all GPU buffers held by the HIP backend. */
 static void hip_backend_free_bufs(HipBackend *b) {
     for (int i = 0; i < b->n_bufs; i++) {
         if (b->d_buf[i]) hipFree(b->d_buf[i]);
@@ -285,6 +289,7 @@ static void hip_backend_free_bufs(HipBackend *b) {
     b->n_bufs = 0;
 }
 
+/* Get or allocate a GPU buffer of the requested size. */
 static float *hip_backend_get_buf(HipBackend *b, int idx, size_t needed) {
     if (idx >= 8) { fprintf(stderr, "[hip] buf index %d out of range\n", idx); return NULL; }
     while (b->n_bufs <= idx) {
@@ -301,6 +306,7 @@ static float *hip_backend_get_buf(HipBackend *b, int idx, size_t needed) {
     return b->d_buf[idx];
 }
 
+/* Find a decoder weight tensor by name in the GPU weight cache. */
 static GpuWeight *hip_find_weight(HipBackend *b, const char *name) {
     for (int i = 0; i < b->n_gpu_weights; i++)
         if (!strcmp(b->gpu_weights[i].name, name))
@@ -308,6 +314,7 @@ static GpuWeight *hip_find_weight(HipBackend *b, const char *name) {
     return NULL;
 }
 
+/* Find an encoder weight tensor by name in the GPU weight cache. */
 static GpuWeight *hip_find_enc_weight(HipBackend *b, const char *name) {
     char fullname[256];
     snprintf(fullname, sizeof(fullname), "enc:%s", name);
@@ -315,6 +322,7 @@ static GpuWeight *hip_find_enc_weight(HipBackend *b, const char *name) {
 }
 
 /* CPU-side dequantization helper for weight cache */
+/* Dequantize BF8/float32 weight tensor (HIP copy of CPU version). */
 static float *dequant_weights(const DACTensor *weight_v, const DACTensor *weight_g,
                                const DACTensor *bias,
                                int *out_Ci, int *out_K, int *out_Co, int *is_conv_transpose) {
@@ -362,6 +370,7 @@ static float *dequant_weights(const DACTensor *weight_v, const DACTensor *weight
     return cpu_buf;
 }
 
+/* Upload all model weights to GPU memory for fast decoding. */
 static int hip_upload_weights(HipBackend *b, DACTensor *ts, int nt) {
     if (!ts) return TSAC_ERR_PARAM;
 
