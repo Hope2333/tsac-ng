@@ -1,16 +1,21 @@
 # Current Status
 
-**Phase**: ROUND_048_COMPLETE → ROUND_049_PENDING (convtr norm comparison done, fix pending)
+**Phase**: ROUND_054_COMPLETE → ROUND_055_PENDING
 **Date**: 2026-05-26
 
 ## Active Issues
-- **ISS-011**: Decoder WAV mismatch — BF8 dequant formula verified, group structure/conv kernel remain open
+- **ISS-011**: Decoder WAV mismatch — model.0 dequant verified correct (injection test); gap is in conv1d kernel or RVQ
 - **ISS-013**: Normal TXC not supported — format documented, implementation deferred
 
-## Next Round: 049
-Conv1d layer-by-layer output comparison via GDB to isolate which layer first diverges.
+## RMS Status
+- Reference: 0.203 (-13.85 dBFS)
+- Our (after is_ct fix): 0.080 (-21.99 dBFS)
+- Gap: libnc output is 2.5× larger
+
+## Next Round: 055
+Compare our conv1d kernel output vs libnc nc_conv_1d for same input and weights.
 
 ## Key Evidence
-- 9 BF8 formula variants tested (R038): all equivalent under same group structure
-- libnc weight comparison blocked (R037): nc_convert_from_old_bf is internal call
-- Reference RMS: -13.85 dBFS; Our RMS: -3.86 dBFS (10 dB gap)
+- /tmp/libnc_w07.bin — libnc model.0 weight (R043)
+- Model.0 weight injection test: RMS unchanged (R052)
+- is_ct fix committed: 6119c3c (R049)

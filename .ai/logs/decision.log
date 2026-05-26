@@ -157,3 +157,34 @@ Round 033: in_proj+out_proj implemented (57fd801). RMS unchanged — BF8 dequant
 - Divergence reversal confirmed in models 1-4
 - Convtr weight dequant and residual block conv1d weights are top suspects
 - Efficient C comparison needed for 18.8M-element tensor
+
+# ROUND 049 (2026-05-26)
+- Found: is_ct detection falsely triggers for square Ci==Co tensors
+- Fix: added d0!=d2 check — bias->dims[0]==d0 && d0!=d2
+- Impact: RMS -3.86→-21.99 dBFS (direction reversed, 18 dB swing)
+- Committed: 6119c3c
+
+# ROUND 050 (2026-05-26)
+- Attempted convtr norm loop fix — saturated (RMS=1.0)
+- Oracle review: norm loop is axis-correct — no fix needed
+- Weight_g dims verified: all convtr dims[2]==Ci, no OOB risk
+
+# ROUND 051 (2026-05-26)
+- Layer-by-layer re-run after is_ct fix: m0=0.609 (unchanged), final=0.080
+- Direction reversed: was our 3.2× too loud, now libnc 2.5× larger
+- First actual code fix committed after 51 rounds
+
+# ROUND 052 (2026-05-26)
+- Model.0 weight injection test: libnc dump → our decoder → RMS unchanged (0.080)
+- Weight comparison: our RMS 0.004835 = libnc 0.004835 (identical per-channel energy)
+- Conclusion: model.0 weight dequant NOT the bottleneck
+
+# ROUND 053 (2026-05-26)
+- Oracle review: R033 contradiction — RVQ changes don't propagate, so RVQ can't be primary cause
+- Alternate hypothesis: conv1d kernel (padding, bias, precision)
+- Decision: test kernel before RVQ investigation
+
+# ROUND 054 (2026-05-26)
+- Synthesis: after 54 rounds, model.0 dequant verified correct
+- Remaining gap: -21.99 vs -13.85 (8 dB)
+- Next: conv1d kernel comparison

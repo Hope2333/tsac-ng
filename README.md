@@ -4,7 +4,7 @@
 Compatible with the `.txc` container format and `.bin` model files.
 
 > **🤖 AI-Assisted Development**: This project was built by a single developer
-> working with AI coding assistants across 51 investigation rounds.
+> working with AI coding assistants across 54 investigation rounds.
 > Architecture, ground-truth extraction (GDB/objdump), and verification were
 > human-led; implementation was AI-augmented. See [METHODOLOGY.md](.ai/METHODOLOGY.md)
 > for the full story.
@@ -146,7 +146,7 @@ Options (compatible with original tsac):
 ## Roadmap
 
 See [.ai/ROADMAP.md](.ai/ROADMAP.md) for detailed milestone planning.
-Current phase: **ROUND_051_COMPLETE** (~70% overall completion).
+Current phase: **ROUND_054_COMPLETE** (~70% overall completion).
 
 ## Development Methodology
 
