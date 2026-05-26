@@ -142,3 +142,18 @@ Round 033: in_proj+out_proj implemented (57fd801). RMS unchanged — BF8 dequant
 - Divergence reversal identified: libnc larger at model.0, our larger at final
 - Root cause narrowed to residual blocks + convtr (models 1-4)
 - Next: verify convtr weight dequant (is_ct=1 path)
+
+# ROUND 046 (2026-05-26)
+- Intercepted nc_conv_transpose_1d via LD_PRELOAD
+- Dumped model.1.block.1 convtr weight: [768,16,1536] = 18,874,368 floats
+- Convtr uses same calling convention (weight=rsi) as conv1d
+
+# ROUND 047 (2026-05-26)
+- Analyzed is_ct=1 dequant path for convtr tensors
+- Ci=d2, Co=d0, norm per input channel
+- Weight_g dims[2]=1536 matches Ci — correct indexing
+
+# ROUND 048 (2026-05-26)
+- Divergence reversal confirmed in models 1-4
+- Convtr weight dequant and residual block conv1d weights are top suspects
+- Efficient C comparison needed for 18.8M-element tensor
