@@ -1,22 +1,7 @@
 #ifndef RANGE_CODER_H
 #define RANGE_CODER_H
 
-/*
- * range_coder.h — Arithmetic range coder for codebook index decoding.
- *
- * Reverse-engineered from original tsac binary's arith.c.
- * Supports two decoding modes:
- *   - rc_decoder_get_freq(): Adaptive 15-bit probability (normal TXC mode)
- *   - rc_decoder_direct_bit(): Fixed 50/50 probability (fast TXC fallback)
- *
- * Algorithm (from GDB RE @ 0x42bbe0):
- *   range0 = (range * freq) >> 15
- *   Normalization threshold: RC_MIN_VALUE (0xFF00)
- *
- * The original tsac uses get_freq with a binary search decoder
- * to extract codebook indices from the range-coded bitstream.
- * get_bit (at 0x42bd30) is confirmed dead code — never called.
- */
+/* Range coder: get_freq (15-bit adaptive) + direct bit. RE from arith.c. */
 
 #include <stddef.h>
 #include <stdint.h>
