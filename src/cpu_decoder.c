@@ -274,41 +274,7 @@ float *dequant_weights(const DACTensor *weight_v, const DACTensor *weight_g,
 
     const float *g_scales = weight_g ? (const float *)weight_g->data : NULL;
     int norm_channels = weight_g ? (int)weight_g->dims[2] : d2;
-    /* R104: batch inject libnc captured data */
-    {
-        char _fn[256];
-        snprintf(_fn, 256, "/tmp/lcc_XXX_%dx%dx%d.bin", d0, d1, d2);
-        FILE *_f = fopen(_fn, "rb");
-        if (!_f) { snprintf(_fn, 256, "/tmp/lcc_XXX_%dx%dx%d.bin", d2, d1, d0); _f = fopen(_fn, "rb"); }
-        if (_f) {
-            size_t _nelem = (size_t)d0 * d1 * d2;
-            float *_lib = (float *)malloc(_nelem * 4);
-            if (_lib) {
-                size_t _r = fread(_lib, 4, _nelem, _f);
-                if (_r == _nelem) {
-                    if (!is_ct && d0 != d2) {
-                        for (int _ci = 0; _ci < d0; _ci++)
-                            for (int _k = 0; _k < d1; _k++)
-                                for (int _co = 0; _co < d2; _co++)
-                                    src_f32[_co * d0 * d1 + _ci * d1 + _k] =
-                                        _lib[_ci * d1 * d2 + _k * d2 + _co];
-                    } else if (is_ct) {
-                        for (int _co = 0; _co < d0; _co++)
-                            for (int _k = 0; _k < d1; _k++)
-                                for (int _ci = 0; _ci < d2; _ci++)
-                                    src_f32[_co * d2 * d1 + _ci * d1 + _k] =
-                                        _lib[_co * d1 * d2 + _k * d2 + _ci];
-                    } else {
-                        memcpy(src_f32, _lib, _nelem * 4);
-                    }
-                    norm_channels = 0;
-                    fprintf(stderr,"[BATCH] %dx%dx%d\n", d0, d1, d2);
-                }
-                free(_lib);
-            }
-            fclose(_f);
-        }
-    }
+
     float *norms = (float *)calloc((size_t)norm_channels, sizeof(float));
     if (!norms) { free(src_f32); free(w_f32); return NULL; }
 
