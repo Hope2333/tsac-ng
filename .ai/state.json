@@ -1,5 +1,5 @@
 {
-  "updated": "2026-05-28 01:37:10",
+  "updated": "2026-05-28 02:02:47",
   "quality_score": "86.85",
   "rounds_completed": [
     79,
@@ -24,10 +24,15 @@
     98,
     99,
     100,
+    101,
+    102,
     103,
     104,
     105,
-    108
+    106,
+    107,
+    108,
+    109
   ],
   "key_findings": {
     "is_ct_regression": {
@@ -209,6 +214,17 @@
       "source": "R108 injection comparison",
       "fix": "Skip L2 norm for K>1 layers in dequant_weights",
       "expected": "RMS and correlation improvement"
+    },
+    "model_loader_override": {
+      "result": "12 layers overridden, corr 0.0015 — no improvement",
+      "conclusion": "dequant_weights L2 norm+gain incompatible with per-layer libnc normalization"
+    },
+    "close_out": {
+      "total_rounds": 32,
+      "empirical_approaches_exhausted": true,
+      "root_cause": "BF8 grouping axis in nc_reduce_sum_sqr (0x8310)",
+      "remaining_path": "GDB single-step of nc_reduce_sum_sqr SIMD kernel",
+      "recommendation": "Accept current state or proceed with GDB single-step"
     }
   },
   "quality_tools": {
