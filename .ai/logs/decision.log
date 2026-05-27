@@ -278,3 +278,18 @@ Round 033: in_proj+out_proj implemented (57fd801). RMS unchanged — BF8 dequant
 **Decision**: Final documentation and Oracle submission.
 **Rationale**: 18 rounds complete. All requirements verified.
 **Impact**: Final submission.
+
+## Round 100 — 2026-05-27
+**Decision**: BF8 in_proj bypass using libnc ground truth.
+**Rationale**: Verify whether BF8 decode is root cause. Used 6 pre-captured in_proj weight files.
+**Impact**: corr 0.0005 — BF8 NOT root cause. RMS gap narrowed to 5.45 dB.
+
+## Round 103 — 2026-05-27
+**Decision**: Capture ALL decoder layers via LD_PRELOAD.
+**Rationale**: in_proj not root cause → problem must be in model weights. Chunked shim for large tensors.
+**Impact**: 62 layer files captured. 13 formulas tested vs model.0 — best corr 0.039.
+
+## Round 104 — 2026-05-27
+**Decision**: Inject libnc weights layer by layer + batch.
+**Rationale**: Isolate which layers cause WAV error. model.0 injected first, then all 22 layers.
+**Impact**: model.0 → no change. 22-layer batch → RMS 0.9999 clipping, corr 0.002. Root cause: BF8 grouping axis mismatch.
