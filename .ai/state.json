@@ -1,5 +1,5 @@
 {
-  "updated": "2026-05-28 02:17:21",
+  "updated": "2026-05-28 02:40:10",
   "quality_score": "86.85",
   "rounds_completed": [
     79,
@@ -33,7 +33,8 @@
     107,
     108,
     109,
-    110
+    110,
+    113
   ],
   "key_findings": {
     "is_ct_regression": {
@@ -239,6 +240,13 @@
       "agents": 12,
       "strategy": "dialectical_materialism",
       "note": "rescued from overwritten R110 plan"
+    },
+    "r113_findings": {
+      "group_size_pattern": "gs = f(K): K=1→2, K=7→14, K=8→16, K=16→16",
+      "grouping_axis": "K×Co interleaved (K first, then Co)",
+      "formula_sweep": "10+ formulas exhausted, all corr=-0.000",
+      "conclusion": "Formula not the issue — grouping axis confirmed. Stride computation needs GDB.",
+      "remaining_path": "GDB single-step nc_reduce_sum_sqr for exact memory access pattern"
     }
   },
   "quality_tools": {
