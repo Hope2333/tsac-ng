@@ -9,7 +9,8 @@
 /* CPU decoder for dac_model_decode (fallback) */
 int cpu_decoder_run(DACTensor *tensors, int n_tensors,
                      const int *codes, int n_frames, int n_codebooks,
-                     float *pcm, int n_samples, int channels);
+                     float *pcm, int n_samples, int channels,
+                     int n_threads);
 
 /* HIP decoder — defined in dac_decoder.hip.cpp */
 int dac_decoder_run(DACTensor *tensors, int n_tensors,
@@ -46,13 +47,13 @@ int dac_model_decode(DACModel *model,
                      float *pcm, int n_samples,
                      int n_threads)
 {
-    (void)n_threads;
     if (!model || !model->tensors || !codebook_indices || !pcm)
         return TSAC_ERR_PARAM;
 
     /* Try HIP decoder first, fall back to CPU */
     int ret = cpu_decoder_run(model->tensors, model->n_tensors,
                                 codebook_indices, n_frames, n_codebooks,
-                                pcm, n_samples, channels);
+                                pcm, n_samples, channels,
+                                n_threads);
     return (ret == 0) ? TSAC_OK : TSAC_ERR_BACKEND;
 }
