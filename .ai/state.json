@@ -1,5 +1,5 @@
 {
-  "updated": "2026-05-27 16:45:00",
+  "updated": "2026-05-27 17:30:00",
   "quality_score": "86.85",
   "rounds_completed": [
     79,
@@ -24,13 +24,9 @@
     98,
     99,
     100,
-    101,
-    102,
     103,
     104,
     105,
-    106,
-    107,
     108
   ],
   "key_findings": {
@@ -199,6 +195,14 @@
     "r108_conclusion": {
       "injection_result": "clipping (RMS 0.9999) \u2014 per-layer normalization differs (K=1 vs K>1)",
       "remaining": "GDB single-step nc_reduce_sum_sqr for BF8 grouping pattern"
+    },
+    "r101_r102_skipped": {
+      "status": "CANCELLED",
+      "reason": "R100 proved BF8 in_proj not root cause \u2014 decision gate triggered branch B"
+    },
+    "r106_r107_skipped": {
+      "status": "CANCELLED",
+      "reason": "Batch injection failed; BF8 grouping axis cannot be fixed empirically"
     }
   },
   "quality_tools": {
@@ -217,5 +221,6 @@
     "R104: Layer-by-layer output comparison and fix implementation",
     "R105: Quality freeze, documentation, code cleanup"
   ],
-  "pending_rounds": []
+  "pending_rounds": [],
+  "project_status": "INVESTIGATION_PHASE_COMPLETE \u2014 BF8 grouping axis confirmed, fix requires SIMD kernel analysis"
 }
