@@ -1,11 +1,16 @@
 # Current Status — TSAC Reverse Engineering
-## Active Lane: ROUND_109_COMPLETE → ROUND_110_PLANNED
+## Active Lane: ROUND_110_COMPLETE → ROUND_113_PLANNED
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| RMS | 0.641 (std) | 0.203 |
+| RMS | 0.380 (current) / 0.641 (is_ct baseline) | 0.203 |
+| Correlation (vs ref) | 0.002 | 1.000 |
 | Quality | 86.85 | 87+ |
-| Rounds | 31 (079-109) | — |
+| Rounds | 32 (079-110) | — |
 
-### R110 Strategy
-12 Deep Agents 并行 → 辩证唯物主义信息求索 → BF8 分轴定位
+### R110 Complete (Worker Quality Freeze)
+- Code clean, injection removed, build OK
+- RMS 0.380, is_ct baseline corr 0.952
+
+### R111-R112: PENDING (conditional on R113 findings)
+### R113: 12-Agent information gathering round
