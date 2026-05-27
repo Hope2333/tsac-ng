@@ -293,3 +293,8 @@ Round 033: in_proj+out_proj implemented (57fd801). RMS unchanged — BF8 dequant
 **Decision**: Inject libnc weights layer by layer + batch.
 **Rationale**: Isolate which layers cause WAV error. model.0 injected first, then all 22 layers.
 **Impact**: model.0 → no change. 22-layer batch → RMS 0.9999 clipping, corr 0.002. Root cause: BF8 grouping axis mismatch.
+
+## Round 105 — 2026-05-27
+**Decision**: Quality freeze. BF8 investigation complete.
+**Rationale**: 13 formulas tested (best corr 0.039), 22-layer batch injection tried (RMS 0.9999 clipping). Root cause confirmed as BF8 grouping axis mismatch in nc_reduce_sum_sqr. No further empirical progress possible.
+**Impact**: 14 libnc weight files archived for future use. Code cleaned of injection experiments.
