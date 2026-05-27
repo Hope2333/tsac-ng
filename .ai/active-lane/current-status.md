@@ -1,13 +1,16 @@
 # Current Status — TSAC Reverse Engineering
-## Active Lane: ROUND_099_COMPLETE
-| Metric | Value | Target |
-|--------|-------|--------|
-| RMS | 0.641 (-3.86 dBFS) | 0.203 (-13.85 dBFS) |
-| Quality | 86.85 | 87+ |
-| Rounds | 21 (079-099) | 3+ |
-| Tasks | ~41 | 12+ |
 
-### Blockers
-BF8 formula in nc_reduce_sum_sqr — disassembled but not yet fully reverse-engineered.
+## Active Lane: ROUND_104_PLANNED
+
+### Strategy Shift (May 27)
+**From**: BF8 dequant formula investigation (R079-R103, 25 rounds)
+**To**: Dequant weight output LAYOUT investigation — dequant_weights may produce correct VALUES but in wrong ORDER
+
 ### Evidence
-docs/evidence/: 4 disassembly files + GDB captures + LD_PRELOAD captures + verbose logs
+- R100: BF8 in_proj bypass — correlation got WORSE (0.002→0.0005)
+- RVQ transpose fix: correcting layout made output WORSE (0.641→0.380)
+- R103: 13 BF8 formulas all failed (best corr 0.039)
+- **New hypothesis**: dequant_weights output ordering mismatches libnc for ALL layers
+
+### Next
+R104 — Compare our model.0 dequant output with libnc LD_PRELOAD capture byte-for-byte.

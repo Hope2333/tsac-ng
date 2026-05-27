@@ -1,5 +1,5 @@
 {
-  "updated": "2026-05-26 21:08:37",
+  "updated": "2026-05-27 13:21:39",
   "quality_score": "86.85",
   "rounds_completed": [
     79,
@@ -22,13 +22,15 @@
     96,
     97,
     98,
-    99
+    99,
+    100,
+    103
   ],
   "key_findings": {
     "is_ct_regression": {
       "commit": "6119c3c",
       "change": "added d0!=d2 guard",
-      "impact": "RMS 0.641\u21920.080 (-3.86\u2192-21.99 dBFS)",
+      "impact": "RMS 0.641→0.080 (-3.86→-21.99 dBFS)",
       "fix": "reverted to (bias && bias->dims[0] == d0)",
       "verification": "RMS restored to 0.641"
     },
@@ -51,7 +53,7 @@
       "note": "BF8 decoding happens BEFORE this function in call chain"
     },
     "mogera_audio": {
-      "source": "test-simples/\u3077\u3089\u3077\u3089\u3046\u3093\u3058.opus",
+      "source": "test-simples/ぷらぷらうんじ.opus",
       "format": "48000Hz stereo Opus, 09:28-3:15:20",
       "slices_created": [
         "30s",
@@ -64,7 +66,7 @@
     "bf8_investigation": {
       "nc_convert_not_called": "dequant happens at load time, not decode",
       "codebook_architecture": "[8,1024] entries with in_proj coeffs",
-      "back_solve_recon_error": "97.7% \u2014 libnc RVQ outside 8-dim subspace",
+      "back_solve_recon_error": "97.7% — libnc RVQ outside 8-dim subspace",
       "is_ct_fix_lost": "re-applied after git checkout reversion"
     },
     "final_status": {
@@ -98,22 +100,98 @@
     "nc_reduce_sum_sqr": {
       "disassembled": true,
       "path": "docs/evidence/nc_reduce_sum_sqr_disasm.txt"
+    },
+    "ai_ltc_tsac_ng_fork": {
+      "status": "created",
+      "location": ".ai/prompts/tsac-ng/",
+      "files": [
+        "header.prompt.md",
+        "worker.prompt.md",
+        "protocol.md"
+      ],
+      "inherits_from": "AI-LTC/prompts/roles/ (strategist, generalist, architect)",
+      "separation": "tsac-ng specific paths/baselines/commands NOT in AI-LTC generic templates",
+      "git_branch": "tsac-ng",
+      "repo": ".ai/AI-LTC (forks/tsac-ng/)",
+      "branches": {
+        "Experimental": "AI-LTC baseline (clean, no tsac-ng specifics)",
+        "tsac-ng": "tsac-ng project fork (header/worker/protocol prompts)"
+      }
+    },
+    "round_100": {
+      "status": "completed",
+      "bypass_correlation": 0.0032,
+      "sign_mismatch": 49.3,
+      "decision_gate": "Branch B (corr < 0.1)",
+      "conclusion": "BF8 dequantization is NOT the root cause — libnc in_proj weights injected directly produce zero-correlation output",
+      "code_changes": [
+        "src/cpu_decoder.c: bypass_inproj_init() + RVQ loop bypass for 6 codebooks",
+        "src/dac_model.c: fixed cpu_decoder_run signature mismatch (missing n_threads param)"
+      ],
+      "bugs_found": [
+        "dac_model.c: cpu_decoder_run forward declaration had 8 params but impl has 9 — UB on n_threads stack read (observed threads=43)"
+      ],
+      "performance_findings": [
+        "conv1d_dilated_s is scalar-only, no SIMD/threading — bottleneck at block 3 (T=6656) and block 4 (T=26624)"
+      ]
+    },
+    "round_100_105_decision_gate": {
+      "result": "Branch B activated",
+      "correlation": 0.0032,
+      "threshold": "< 0.1",
+      "next_rounds": [
+        103,
+        104,
+        105
+      ],
+      "r101": "CANCELLED — nc_reduce_sum_sqr GDB single-step not needed",
+      "r102": "CANCELLED — BF8 fix is not the solution",
+      "r103": "Full model weight LD_PRELOAD capture (all tensors, all layers)",
+      "r104": "Layer-by-layer comparison and fix implementation",
+      "r105": "Quality freeze + docs"
+    },
+    "r100_103_bypass": {
+      "bypass_result": "corr=0.0005 — BF8 not root cause",
+      "model_weight_captured": true,
+      "libnc_bf8_analysis": {
+        "best_formula_corr": 0.039,
+        "unit_norm_corr": -0.0,
+        "scale_distribution": "symmetric around 127",
+        "grouping_pattern": "fundamentally different from our [Ci,K,Co] grouping"
+      },
+      "next": "analyze captured weights for layer-wise divergence"
+    },
+    "transpose_fix": {
+      "old_access": "ip_f32[raw*Co+o] — transposed",
+      "correct_access": "ip_f32[o*Ci+raw] — correct layout",
+      "result": "RMS 0.641→0.380 (worse), correlation unchanged (0.0005)",
+      "conclusion": "Transpose is compensating error for BF8 dequant"
+    },
+    "strategy_shift": {
+      "from": "BF8 dequant formula",
+      "to": "Dequant output layout for all layer types",
+      "rationale": "R100 BF8 bypass failed, R103 13 formulas all failed"
     }
   },
   "quality_tools": {
     "fuck-u-code": "86.85 (unchanged)",
-    "time-complexity": "dequant_weights O(n\u00b3) amortized, decode_batch hotspot",
-    "codewrench": "52 warnings \u2014 all C false positives (printf/memcpy in strings category)"
+    "time-complexity": "dequant_weights O(n³) amortized, decode_batch hotspot",
+    "codewrench": "52 warnings — all C false positives (printf/memcpy in strings category)"
   },
   "blockers": [
-    "BF8 dequant formula (grouped BF8 decode) needs to be compared with libnc",
-    "GDB capture of actual libnc output unreliable \u2014 need LD_PRELOAD approach",
-    "Original binary at /usr/lib/tsac/tsac, libnc at /usr/lib/tsac/libnc.so"
+    "R100: BF8 in_proj ruled out as root cause (bypass corr=0.0005, worse)",
+    "RVQ transpose fix exposes worse output (RMS 0.641→0.380) — compensating error",
+    "Dequant_weights output layout may not match libnc for all layer types",
+    "Need per-layer weight comparison (our dequant vs libnc LD_PRELOAD capture)"
   ],
   "next_rounds": [
-    "Disassemble nc_convert_to_bf/nc_convert for BF8 decode step",
-    "Compare grouped BF8 formula: (byte-128)*scale/127 vs libnc",
-    "LD_PRELOAD intercept of full weight dequant sequence",
-    "Test alternative gain formulas (weight_g might be inverse-L2-norm)"
+    "R103: Full model weight LD_PRELOAD capture — all tensors, all layers",
+    "R104: Layer-by-layer output comparison and fix implementation",
+    "R105: Quality freeze, documentation, code cleanup"
+  ],
+  "pending_rounds": [
+    103,
+    104,
+    105
   ]
 }
