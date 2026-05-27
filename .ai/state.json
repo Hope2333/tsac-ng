@@ -1,5 +1,5 @@
 {
-  "updated": "2026-05-27 16:18:49",
+  "updated": "2026-05-27 16:45:00",
   "quality_score": "86.85",
   "rounds_completed": [
     79,
@@ -30,7 +30,8 @@
     104,
     105,
     106,
-    107
+    107,
+    108
   ],
   "key_findings": {
     "is_ct_regression": {
@@ -194,7 +195,11 @@
       "R106": "Implement fix for identified bottleneck (RVQ or conv1d/convtr)",
       "R107": "Quality tools, documentation, Oracle verification"
     },
-    "project_status": "COMPLETE \u2014 29 rounds, BF8 grouping axis identified, 14 weight files archived"
+    "project_status": "COMPLETE \u2014 29 rounds, BF8 grouping axis identified, 14 weight files archived",
+    "r108_conclusion": {
+      "injection_result": "clipping (RMS 0.9999) \u2014 per-layer normalization differs (K=1 vs K>1)",
+      "remaining": "GDB single-step nc_reduce_sum_sqr for BF8 grouping pattern"
+    }
   },
   "quality_tools": {
     "fuck-u-code": "86.85 (unchanged)",
