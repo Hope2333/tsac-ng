@@ -253,56 +253,42 @@ float *dequant_weights(const DACTensor *weight_v, const DACTensor *weight_g,
         const uint8_t *v_data = weight_v->data;
         for (int i = 0; i < src_size; i++) src_f32[i] = ((float)v_data[i] - 128.0f) / 127.0f;
     } else {
-        /* LibNC q8/BF8 tensors store grouped value bytes plus one scale byte per group.
-         * The scale byte is a linear block scale centered around 127, so common bytes
-         * 127/129 keep the group near unit scale while preserving group alignment. */
+        /* LibNC BF8 format: [all int8 values (src_size bytes)]
+         *                  [all uint8 scales (n_groups bytes)]
+         * Each group has group_size = src_size / n_groups = min(K*2,16) values.
+         * Scale for values in group g is at scales[g]. */
         int n_groups = weight_v->data_size - src_size;
         if (n_groups <= 0 || src_size % n_groups != 0) {
             free(src_f32); free(w_f32); return NULL;
         }
         int group_size = src_size / n_groups;
-        const uint8_t *p = weight_v->data;
-        int out = 0;
+        const uint8_t *values = weight_v->data;
+        const uint8_t *scales = weight_v->data + src_size;
+        float scale_base = 1.0f / (127.0f * 4096.0f);
         for (int g = 0; g < n_groups; g++) {
-            float group_scale = (float)(p[group_size] ? p[group_size] : 1) / 127.0f;
+            float s = (float)(scales[g] ? scales[g] : 1) * scale_base;
             for (int i = 0; i < group_size; i++) {
-                src_f32[out++] = ((float)*p++ - 128.0f) * group_scale;
+                int idx = g * group_size + i;
+                src_f32[idx] = (float)((int8_t)values[idx]) * s;
             }
-            p++; /* grouped BF8 scale byte */
         }
     }
 
-    const float *g_scales = weight_g ? (const float *)weight_g->data : NULL;
-    int norm_channels = weight_g ? (int)weight_g->dims[2] : d2;
-
-    float *norms = (float *)calloc((size_t)norm_channels, sizeof(float));
-    if (!norms) { free(src_f32); free(w_f32); return NULL; }
-
-    for (int i0 = 0; i0 < d0; i0++)
-        for (int k = 0; k < K; k++)
-            for (int i2 = 0; i2 < d2; i2++) {
-                int src_idx = i0 * K * d2 + k * d2 + i2;
-                float v = src_f32[src_idx];
-                if (i2 < norm_channels) norms[i2] += v * v;
-            }
-    for (int i = 0; i < norm_channels; i++) norms[i] = sqrtf(norms[i] + 1e-12f);
-
+    /* Output in [Co, Ci, K] layout without L2 normalization.
+     * Libnc's BF8 weights are pre-scaled via byte/127/4096 and don't
+     * have per-channel L2 norm applied at load time. */
     for (int ci = 0; ci < Ci; ci++) {
         for (int k = 0; k < K; k++) {
             for (int co = 0; co < Co; co++) {
                 int src_idx = is_ct
                     ? co * K * Ci + k * Ci + ci
                     : ci * K * Co + k * Co + co;
-                int norm_idx = is_ct ? ci : co;
-                float g = weight_g ? g_scales[norm_idx] : 1.0f;
-                float n = (norm_idx < norm_channels) ? norms[norm_idx] : 1.0f;
                 int dst_idx = co * Ci * K + ci * K + k;
-                w_f32[dst_idx] = src_f32[src_idx] * g / n;
+                w_f32[dst_idx] = src_f32[src_idx];
             }
         }
     }
 
-    free(norms);
     free(src_f32);
 
     return w_f32;
