@@ -201,7 +201,9 @@ static CPUOps get_ops(void) {
     }
 #endif
 
-    /* Always use scalar convt for debugging — suspected SIMD bug */
+    /* NOTE: convt1d_avx512 was tested and produces 27× larger activations
+     * than convt1d_s with identical inputs/weights. FMA accumulation pattern
+     * needs investigation. Using scalar convt for correctness. */
     ops.conv_transpose1d = convt1d_s;
     return ops;
 }

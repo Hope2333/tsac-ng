@@ -9,8 +9,9 @@
 #define MAGIC_TNS 0x23f4aefa
 
 /* Check for libnc override: if /tmp/libnc_OVR_<layer_name>.bin exists,
- * replace weight_v data with the float32 reference. Set by env var
- * TSAC_LIBNC_OVERRIDE=layer1,layer2,... or "ALL" to override all decoder layers. */
+ * replace weight_v data with the float32 reference.
+ * Uses tensor name with '.' replaced by '_' as filename.
+ * Example: decoder.model.0.weight_v → /tmp/libnc_OVR_decoder_model_0_weight_v.bin */
 #define LIBNC_OVR_DIR "/tmp/libnc_OVR_"
 
 /* Load a .bin model file into a DACModel structure. */
