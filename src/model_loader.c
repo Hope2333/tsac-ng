@@ -8,6 +8,11 @@
 #define MAGIC_HDR 0x23f4aefb
 #define MAGIC_TNS 0x23f4aefa
 
+/* Check for libnc override: if /tmp/libnc_OVR_<layer_name>.bin exists,
+ * replace weight_v data with the float32 reference. Set by env var
+ * TSAC_LIBNC_OVERRIDE=layer1,layer2,... or "ALL" to override all decoder layers. */
+#define LIBNC_OVR_DIR "/tmp/libnc_OVR_"
+
 /* Load a .bin model file into a DACModel structure. */
 int model_loader_load(const char *path, DACModel *model)
 {
@@ -96,6 +101,58 @@ int model_loader_load(const char *path, DACModel *model)
             else t->elem_size = 1;
         } else {
             t->elem_size = 4;
+        }
+
+        /* LibNC override: check for float32 weight override file */
+        if (strstr(t->name, "weight_v")) {
+            char ovr_path[512];
+            /* Build path from tensor name: replace '.' with '_' */
+            int name_len = (int)strlen(t->name);
+            snprintf(ovr_path, sizeof(ovr_path), "%s%s.bin", LIBNC_OVR_DIR, t->name);
+            /* Replace dots only in the name portion, not the appended .bin */
+            for (char *p = ovr_path + strlen(LIBNC_OVR_DIR); *p && (p - ovr_path) < (int)(strlen(LIBNC_OVR_DIR) + name_len); p++)
+                if (*p == '.') *p = '_';
+            FILE *ovf = fopen(ovr_path, "rb");
+            if (ovf) {
+                fseek(ovf, 0, SEEK_END);
+                long ov_size = ftell(ovf);
+                fseek(ovf, 0, SEEK_SET);
+                int dims_prod = 1;
+                for (int d = 0; d < (int)nd; d++) dims_prod *= t->dims[d];
+                if (ov_size == dims_prod * 4) {
+                    float *ov_f32 = (float *)malloc(ov_size);
+                    fread(ov_f32, 1, ov_size, ovf);
+                    /* Override data is in [Co][Ci][K] runtime order. Convert to
+                     * flat [d0][K][d2] order so dequant_weights' existing
+                     * rearrangement works correctly. */
+                    int d0 = t->dims[0], d1 = t->dims[1], d2 = t->dims[2];
+                    int Ci = (nd >= 3 && d0 == d2) ? d2 : d0;  /* heuristic is_ct */
+                    int Co = (nd >= 3 && d0 == d2) ? d0 : d2;
+                    int K = d1;
+                    float *flat_f32 = (float *)malloc(ov_size);
+                    for (int ci = 0; ci < Ci; ci++)
+                        for (int k = 0; k < K; k++)
+                            for (int co = 0; co < Co; co++) {
+                                /* [Co][Ci][K] runtime index */
+                                int rt_idx = co * Ci * K + ci * K + k;
+                                /* [d0][K][d2] flat index (for dequant output loop) */
+                                /* For is_ct: d0=Co, d1=K, d2=Ci → flat = co*K*Ci + k*Ci + ci */
+                                /* For !is_ct: d0=Ci, d1=K, d2=Co → flat = ci*K*Co + k*Co + co */
+                                int flat_idx;
+                                if (d0 == d2) /* is_ct */ flat_idx = co * K * Ci + k * Ci + ci;
+                                else flat_idx = ci * K * Co + k * Co + co;
+                                flat_f32[flat_idx] = ov_f32[rt_idx];
+                            }
+                    free(t->data);
+                    t->data = (uint8_t *)flat_f32;
+                    t->data_size = (int)ov_size;
+                    t->elem_size = 4;
+                    free(ov_f32);
+                    fprintf(stderr, "[model_loader] LIBNC OVR: %s (%ld bytes) converted to flat\n",
+                            t->name, ov_size);
+                }
+                fclose(ovf);
+            }
         }
     }
 

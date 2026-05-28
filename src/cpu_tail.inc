@@ -46,6 +46,13 @@
         if (max_s < 0) max_s = 0;
 
         int clipped = 0;
+        /* DEBUG: print output value range before tanh */
+        float max_abs_pre = 0;
+        for (int i = 0; i < m6_Co * cur_frames; i++) {
+            float a = fabsf(output[i]);
+            if (a > max_abs_pre) max_abs_pre = a;
+        }
+        DBG("[DEBUG] m6 output pre-tanh: max_abs=%.2f\n", max_abs_pre);
         for (int c = 0; c < ch && c < m6_Co; c++) {
             for (int s = 0; s < max_s; s++) {
                 int final_s = out_start + s;

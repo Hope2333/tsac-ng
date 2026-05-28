@@ -56,6 +56,10 @@
         }
 
         DBG("[DEBUG] After block%d convt NaN: %d/%d\n", block, count_nan(next_buf, target_C*n_frames_out), target_C*n_frames_out);
+        {
+            float mv = 0; for (int i = 0; i < target_C*n_frames_out; i++) { float a = fabsf(next_buf[i]); if (a > mv) mv = a; }
+            DBG("[DEBUG] After block%d convt max_abs=%.2f [0]=%.4f\n", block, mv, next_buf[0]);
+        }
 
         free(current);
         free(w);

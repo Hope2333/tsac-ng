@@ -201,6 +201,8 @@ static CPUOps get_ops(void) {
     }
 #endif
 
+    /* Always use scalar convt for debugging — suspected SIMD bug */
+    ops.conv_transpose1d = convt1d_s;
     return ops;
 }
 
@@ -394,6 +396,12 @@ static int decode_batch(DACTensor *ts, int nt,
     free(m0_w);
 
     DBG("[DEBUG] After m0 conv1d NaN: %d/%d\n", count_nan(buf0, m0_Co*ctx_frames), m0_Co*ctx_frames);
+    {
+        float max_v = 0;
+        for (int i = 0; i < m0_Co * ctx_frames; i++) { float a = fabsf(buf0[i]); if (a > max_v) max_v = a; }
+        DBG("[DEBUG] After m0 conv1d max_abs=%.2f\n", max_v);
+        DBG("[DEBUG] After m0 conv1d [0..5]: %.4f %.4f %.4f %.4f %.4f %.4f\n", buf0[0],buf0[1],buf0[2],buf0[3],buf0[4],buf0[5]);
+    }
 
     float *current = buf0;
 #include "cpu_tail.inc"
