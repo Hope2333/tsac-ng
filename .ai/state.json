@@ -1,11 +1,46 @@
 {
-  "updated": "2026-05-28 11:35:00",
+  "updated": "2026-05-28 12:13:16",
   "quality_score": "86.67",
   "rounds_completed": [
-    79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90,
-    91, 92, 93, 94, 95, 96, 97, 98, 99, 100,
-    101, 102, 103, 104, 105, 106, 107, 108, 109, 110,
-    111, 112, 113, 114, 115, 116, 117
+    79,
+    80,
+    81,
+    82,
+    83,
+    84,
+    85,
+    86,
+    87,
+    88,
+    89,
+    90,
+    91,
+    92,
+    93,
+    94,
+    95,
+    96,
+    97,
+    98,
+    99,
+    100,
+    101,
+    102,
+    103,
+    104,
+    105,
+    106,
+    107,
+    108,
+    109,
+    110,
+    111,
+    112,
+    113,
+    114,
+    115,
+    116,
+    117
   ],
   "key_findings": {
     "is_ct_regression": {
@@ -36,7 +71,12 @@
     "mogera_audio": {
       "source": "test-simples/ぷらぷらうんじ.opus",
       "format": "48000Hz stereo Opus, 09:28-3:15:20",
-      "slices_created": ["30s", "60s", "120s", "5s"],
+      "slices_created": [
+        "30s",
+        "60s",
+        "120s",
+        "5s"
+      ],
       "txc_created": true
     },
     "bf8_investigation": {
@@ -82,7 +122,11 @@
     "ai_ltc_tsac_ng_fork": {
       "status": "created",
       "location": ".ai/prompts/tsac-ng/",
-      "files": ["header.prompt.md", "worker.prompt.md", "protocol.md"],
+      "files": [
+        "header.prompt.md",
+        "worker.prompt.md",
+        "protocol.md"
+      ],
       "inherits_from": "AI-LTC/prompts/roles/ (strategist, generalist, architect)",
       "separation": "tsac-ng specific paths/baselines/commands NOT in AI-LTC generic templates",
       "git_branch": "tsac-ng",
@@ -113,7 +157,11 @@
       "result": "Branch B activated",
       "correlation": 0.0032,
       "threshold": "< 0.1",
-      "next_rounds": [103, 104, 105],
+      "next_rounds": [
+        103,
+        104,
+        105
+      ],
       "r101": "CANCELLED — nc_reduce_sum_sqr GDB single-step not needed",
       "r102": "CANCELLED — BF8 fix is not the solution",
       "r103": "Full model weight LD_PRELOAD capture (all tensors, all layers)",
@@ -244,6 +292,12 @@
       "conclusion": "BF8 formula correct in isolation (corr 0.799) but insufficient in deployment. K×Co interleaved grouping axis cannot be replicated without libnc model loader source.",
       "gdb_sessions": "gdb_tsac+gdb_sqr → CLOSED",
       "next": "Requires libnc source access — no further empirical approach viable"
+    },
+    "phase2": {
+      "target": "Normal TXC + Transformer decode",
+      "rounds": "120-125",
+      "tasks": 24,
+      "status": "planned"
     }
   },
   "quality_tools": {
