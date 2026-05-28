@@ -1,19 +1,16 @@
 # Current Status — TSAC Reverse Engineering
-## Active Lane: ROUND_116_COMPLETE (All Rounds 79-116 Complete)
+
+## Active Lane: ROUND_114_COMPLETE → ROUND_117_PLANNED
 
 | Metric | Value | Target |
 |--------|-------|--------|
+| BF8 correlation | **0.799** (was 0.016) | 1.000 |
 | RMS | 0.380 (current) | 0.203 |
-| Quality | 86.67 | 86.85 |
-| Rounds | 38 (079-116) | — |
+| Quality | 86.85 | 87+ |
 
-### R116 Complete — Quality Freeze
-- All PENDING rounds processed (R116 done)
-- quality tools stable: fuck-u-code 86.67, time-complexity clean, CodeWrench 52 FP
-- state.json, decision.log, round docs all updated
-- No code changes (documentation-only round)
+### 🔥 R114 GDB Breakthrough
+GDB session at libnc 0x8990 discovered actual BF8 decode formula:
+**gs=32, int8_t signed, scale=uint16→shl 0x10→float32**
+Python validation: correlation 0.799 with libnc (50× improvement!).
 
-### Remaining Work (requires Header dispatch)
-- GDB single-step nc_reduce_sum_sqr for BF8 grouping pattern (human-led interactive)
-- CPU encoder implementation
-- Encoder stride=1 fix for DAC encoder
+### R117: Implement this formula in dequant_weights

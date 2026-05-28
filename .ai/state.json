@@ -1,11 +1,45 @@
 {
-  "updated": "2026-05-28 10:30:00",
+  "updated": "2026-05-28 10:35:26",
   "quality_score": "86.67",
   "rounds_completed": [
-    79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90,
-    91, 92, 93, 94, 95, 96, 97, 98, 99, 100,
-    101, 102, 103, 104, 105, 106, 107, 108, 109, 110,
-    111, 112, 113, 114, 115, 116
+    79,
+    80,
+    81,
+    82,
+    83,
+    84,
+    85,
+    86,
+    87,
+    88,
+    89,
+    90,
+    91,
+    92,
+    93,
+    94,
+    95,
+    96,
+    97,
+    98,
+    99,
+    100,
+    101,
+    102,
+    103,
+    104,
+    105,
+    106,
+    107,
+    108,
+    109,
+    110,
+    111,
+    112,
+    113,
+    114,
+    115,
+    116
   ],
   "key_findings": {
     "is_ct_regression": {
@@ -36,7 +70,12 @@
     "mogera_audio": {
       "source": "test-simples/ぷらぷらうんじ.opus",
       "format": "48000Hz stereo Opus, 09:28-3:15:20",
-      "slices_created": ["30s", "60s", "120s", "5s"],
+      "slices_created": [
+        "30s",
+        "60s",
+        "120s",
+        "5s"
+      ],
       "txc_created": true
     },
     "bf8_investigation": {
@@ -80,7 +119,11 @@
     "ai_ltc_tsac_ng_fork": {
       "status": "created",
       "location": ".ai/prompts/tsac-ng/",
-      "files": ["header.prompt.md", "worker.prompt.md", "protocol.md"],
+      "files": [
+        "header.prompt.md",
+        "worker.prompt.md",
+        "protocol.md"
+      ],
       "inherits_from": "AI-LTC/prompts/roles/ (strategist, generalist, architect)",
       "separation": "tsac-ng specific paths/baselines/commands NOT in AI-LTC generic templates",
       "git_branch": "tsac-ng",
@@ -111,7 +154,11 @@
       "result": "Branch B activated",
       "correlation": 0.0032,
       "threshold": "< 0.1",
-      "next_rounds": [103, 104, 105],
+      "next_rounds": [
+        103,
+        104,
+        105
+      ],
       "r101": "CANCELLED — nc_reduce_sum_sqr GDB single-step not needed",
       "r102": "CANCELLED — BF8 fix is not the solution",
       "r103": "Full model weight LD_PRELOAD capture (all tensors, all layers)",
@@ -221,6 +268,14 @@
         "T4: Oracle verification — defer to next Header dispatch"
       ],
       "quality_score": 86.67
+    },
+    "bf8_breakthrough": {
+      "round": 114,
+      "source": "GDB session at 0x8990",
+      "formula": "gs=32, int8_t signed, scale=uint16→shl 0x10→float32",
+      "validation_correlation": 0.799,
+      "previous_best": 0.016,
+      "improvement": "50×"
     }
   },
   "quality_tools": {
@@ -229,10 +284,7 @@
     "codewrench": "52 warnings — all C false positives (printf/memcpy in strings category)"
   },
   "blockers": [
-    "R100: BF8 in_proj ruled out as root cause (bypass corr=0.0005, worse)",
-    "RVQ transpose fix exposes worse output (RMS 0.641→0.380) — compensating error",
-    "Dequant_weights output layout may not match libnc for all layer types",
-    "Need per-layer weight comparison (our dequant vs libnc LD_PRELOAD capture)"
+    "R117: implement gs=32 BF8 formula in dequant_weights"
   ],
   "next_rounds": [],
   "pending_rounds": [],
