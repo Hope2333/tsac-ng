@@ -41,6 +41,7 @@ add_compile_options(-Wall -Wextra -Wno-unused-parameter)
 set(TSAC_SOURCES
     src/main.c
     src/tsac_codec.c
+    src/tsac_transformer.c
     src/dac_model.c
     src/txc_format.c
     src/model_loader.c
