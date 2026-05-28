@@ -1,6 +1,6 @@
 # tsac-ng — Neural Audio Codec (Multi-Backend)
 
-**tsac-ng v0.1.1** — Reverse-engineered, AI-augmented reimplementation of the TSAC neural audio codec.
+**tsac-ng v0.1.2** — Reverse-engineered, AI-augmented reimplementation of the TSAC neural audio codec.
 Compatible with the `.txc` container format and `.bin` model files.
 
 > **🤖 AI-Assisted Development**: This project was built by a single developer
@@ -16,15 +16,44 @@ Compatible with the `.txc` container format and `.bin` model files.
 
 ## Compatibility Status (Honest Assessment)
 
-| Feature | Status | Notes |
-|---------|:------:|-------|
-| **Our own fast TXC encode/decode** | ✅ | Raw uint8 format, works correctly |
-| **Original tsac fast TXC decode** | ⚠️ | 10-bit indices 100% correct (GDB verified). Audio output wrong: RMS -3.4dB. Root cause identified (libnc BF8 dequant + weight_norm fused op differs from ours) |
-| **Original tsac normal TXC decode** | ❌ | Transformer + range coder not implemented |
-| **Verbose output parity** | ✅ | batch_size, progress %, bitrate, AVG_BITS table — all match original |
-| **CRC32 validation** | ✅ | Fully reversed (polynomial 0x04C11DB7), implemented |
-| **CPU decoder (DAC)** | ✅ | 32 conv1d/29 snake/4 convtr verified via GDB |
-| **CPU encoder** | 🔧 | Architecture correct, needs strided convs |
+| Feature | Status | % | Notes |
+|---------|:------:|:--:|-------|
+| **Our own fast TXC encode/decode** | ✅ | 100% | Raw uint8 format, works correctly |
+| **Original tsac fast TXC decode** | ⚠️ | 30% | 10-bit indices 100% correct. BF8 formula known (corr 0.799) but K×Co grouping axis blocks deployment |
+| **Original tsac normal TXC decode** | ❌ | 15% | Header parsing done. Transformer + range coder planned (Phase 2, R120-R125) |
+| **CRC32 validation** | ✅ | 100% | Fully reversed (polynomial 0x04C11DB7) |
+| **Verbose output parity** | ✅ | 100% | batch_size, progress %, bitrate, AVG_BITS — all match |
+| **DAC decoder architecture** | ✅ | 95% | 32 conv1d/29 snake/4 convtr GDB-verified |
+| **BF8 dequantization** | ⚠️ | 80% | Formula known (gs=32, int8, uint16 scale). Deployment blocked by K×Co stride in nc_reduce_sum_sqr |
+| **CPU SIMD backends** | ✅ | 90% | AVX-512/AVX2/NEON/SVE/RVV auto-dispatch |
+| **GPU backends** | 🔧 | 60% | CUDA/HIP/Vulkan/LLVM JIT stubs exist |
+| **CPU encoder** | 🔧 | 40% | Architecture correct, needs strided convs |
+| **Transformer model** | ❌ | 5% | Parameters known (12L/d512/n4/RoPE), not implemented |
+| **Range coder** | ⚠️ | 30% | get_freq implemented, normal mode decoder incomplete |
+
+### Overall Progress
+
+```
+██████████████████░░░░░░░░ ~70% 已完成
+████████████░░░░░░░░░░░░░░ ~60% 已探索/理解
+████░░░░░░░░░░░░░░░░░░░░░░ ~20% 未探索
+
+39 investigation rounds (079-119) | 17 evidence files | 86.67 quality score
+```
+
+### Next Steps (Phase 2: R120-R125)
+| Step | Task | Est. Hours |
+|:----:|------|:----------:|
+| 1 | Range coder completion | 4-8h |
+| 2 | Transformer architecture design | 4-8h |
+| 3 | Transformer implementation (12L/d512) | 40-80h |
+| 4 | Normal TXC integration + test | 4-8h |
+| 5 | Quality + documentation | 2-4h |
+
+### BF8 Residual (Phase 1 Conclusion)
+- **Formula**: gs=32, int8 signed, uint16→shl16 scale → corr 0.799 (50× improvement)
+- **Blocker**: K×Co interleaved grouping axis in nc_reduce_sum_sqr (0x8310)
+- **Resolution**: Requires GDB single-step of 500+ instr SIMD kernel or libnc source access
 
 ### What We Know (51 Rounds of AI-Augmented Investigation)
 
@@ -139,7 +168,7 @@ Options (compatible with original tsac):
 
 ## Known Limitations
 
-- **Original fast TXC audio**: Decoded indices are 100% correct, but audio output has -3.4dB RMS error due to BF8 dequantization mismatch with libnc's fused operation.
+- **Original fast TXC audio**: Decoded indices 100% correct (54/54 GDB verified). BF8 dequant formula known (gs=32, int8, uint16 scale, corr 0.799 in isolation) but deployment blocked by K×Co stride axis in libnc nc_reduce_sum_sqr (0x8310). Current RMS gap: +9.99 dB, waveform correlation: 0.002.
 - **Normal TXC**: Transformer + range coder path not yet implemented.
 - **Encoder**: Strided convolutions missing for proper temporal encoding.
 
@@ -205,5 +234,5 @@ MIT
 ---
 
 ```
-tsac-ng v0.1.1 — Copyright (c) 2026 Hope2333 (幽零小喵)
+tsac-ng v0.1.2 — Copyright (c) 2026 Hope2333 (幽零小喵)
 ```
