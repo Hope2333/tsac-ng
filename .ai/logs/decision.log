@@ -298,3 +298,9 @@ Round 033: in_proj+out_proj implemented (57fd801). RMS unchanged — BF8 dequant
 **Decision**: Quality freeze. BF8 investigation complete.
 **Rationale**: 13 formulas tested (best corr 0.039), 22-layer batch injection tried (RMS 0.9999 clipping). Root cause confirmed as BF8 grouping axis mismatch in nc_reduce_sum_sqr. No further empirical progress possible.
 **Impact**: 14 libnc weight files archived for future use. Code cleaned of injection experiments.
+
+## Round 116 — 2026-05-28
+**Decision**: Complete final quality/docs round. All investigation rounds (79-116) done.
+**Rationale**: R116 was the last PENDING round. Quality tools run (fuck-u-code 86.67, stable). Documentation updated. No code changes needed.
+**Impact**: Project now has zero PENDING rounds. state.json updated, round-116.md set COMPLETE.
+**Next**: GDB single-step of nc_reduce_sum_sqr — human-led interactive task (requires Header dispatch).

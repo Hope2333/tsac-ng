@@ -1,40 +1,11 @@
 {
-  "updated": "2026-05-28 02:40:10",
-  "quality_score": "86.85",
+  "updated": "2026-05-28 10:30:00",
+  "quality_score": "86.67",
   "rounds_completed": [
-    79,
-    80,
-    81,
-    82,
-    83,
-    84,
-    85,
-    86,
-    87,
-    88,
-    89,
-    90,
-    91,
-    92,
-    93,
-    94,
-    95,
-    96,
-    97,
-    98,
-    99,
-    100,
-    101,
-    102,
-    103,
-    104,
-    105,
-    106,
-    107,
-    108,
-    109,
-    110,
-    113
+    79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90,
+    91, 92, 93, 94, 95, 96, 97, 98, 99, 100,
+    101, 102, 103, 104, 105, 106, 107, 108, 109, 110,
+    111, 112, 113, 114, 115, 116
   ],
   "key_findings": {
     "is_ct_regression": {
@@ -65,12 +36,7 @@
     "mogera_audio": {
       "source": "test-simples/ぷらぷらうんじ.opus",
       "format": "48000Hz stereo Opus, 09:28-3:15:20",
-      "slices_created": [
-        "30s",
-        "60s",
-        "120s",
-        "5s"
-      ],
+      "slices_created": ["30s", "60s", "120s", "5s"],
       "txc_created": true
     },
     "bf8_investigation": {
@@ -87,7 +53,7 @@
       "waveform_correlation": 0.002,
       "is_ct_fixed": true,
       "bf8_formula": "(byte-128)*scale/127 (best known)",
-      "quality_score": 86.85
+      "quality_score": 86.67
     },
     "ld_preload": {
       "working": true,
@@ -103,7 +69,7 @@
       "resolution": "reverse engineer nc_reduce_sum_sqr"
     },
     "final_quality": {
-      "fuck_u_code": 86.85,
+      "fuck_u_code": 86.67,
       "time_complexity": "clean",
       "codewrench": "52 FP"
     },
@@ -114,11 +80,7 @@
     "ai_ltc_tsac_ng_fork": {
       "status": "created",
       "location": ".ai/prompts/tsac-ng/",
-      "files": [
-        "header.prompt.md",
-        "worker.prompt.md",
-        "protocol.md"
-      ],
+      "files": ["header.prompt.md", "worker.prompt.md", "protocol.md"],
       "inherits_from": "AI-LTC/prompts/roles/ (strategist, generalist, architect)",
       "separation": "tsac-ng specific paths/baselines/commands NOT in AI-LTC generic templates",
       "git_branch": "tsac-ng",
@@ -149,11 +111,7 @@
       "result": "Branch B activated",
       "correlation": 0.0032,
       "threshold": "< 0.1",
-      "next_rounds": [
-        103,
-        104,
-        105
-      ],
+      "next_rounds": [103, 104, 105],
       "r101": "CANCELLED — nc_reduce_sum_sqr GDB single-step not needed",
       "r102": "CANCELLED — BF8 fix is not the solution",
       "r103": "Full model weight LD_PRELOAD capture (all tensors, all layers)",
@@ -247,10 +205,26 @@
       "formula_sweep": "10+ formulas exhausted, all corr=-0.000",
       "conclusion": "Formula not the issue — grouping axis confirmed. Stride computation needs GDB.",
       "remaining_path": "GDB single-step nc_reduce_sum_sqr for exact memory access pattern"
+    },
+    "gdb_status": {
+      "nc_convert_capture": "working — confirms BF8 bytes, dims, types",
+      "sqr_bp": "not triggering — requires interactive GDB session",
+      "remaining": "human-led GDB step-through of nc_convert→sqr call path"
+    },
+    "r116_completed": {
+      "status": "completed",
+      "date": "2026-05-28",
+      "tasks": [
+        "T1: Quality tools — fuck-u-code 86.67 (baseline stable), time-complexity clean, CodeWrench 52 FP",
+        "T2: Documentation — state.json updated, decision.log appended, round-116.md set COMPLETE",
+        "T3: No code changes (documentation-only round)",
+        "T4: Oracle verification — defer to next Header dispatch"
+      ],
+      "quality_score": 86.67
     }
   },
   "quality_tools": {
-    "fuck-u-code": "86.85 (unchanged)",
+    "fuck-u-code": "86.67 (stable, within margin of 86.85 baseline)",
     "time-complexity": "dequant_weights O(n³) amortized, decode_batch hotspot",
     "codewrench": "52 warnings — all C false positives (printf/memcpy in strings category)"
   },
@@ -260,11 +234,7 @@
     "Dequant_weights output layout may not match libnc for all layer types",
     "Need per-layer weight comparison (our dequant vs libnc LD_PRELOAD capture)"
   ],
-  "next_rounds": [
-    "R103: Full model weight LD_PRELOAD capture — all tensors, all layers",
-    "R104: Layer-by-layer output comparison and fix implementation",
-    "R105: Quality freeze, documentation, code cleanup"
-  ],
+  "next_rounds": [],
   "pending_rounds": [],
   "project_status": "INVESTIGATION_PHASE_COMPLETE — BF8 grouping axis confirmed, fix requires SIMD kernel analysis"
 }
