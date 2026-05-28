@@ -304,3 +304,10 @@ Round 033: in_proj+out_proj implemented (57fd801). RMS unchanged — BF8 dequant
 **Rationale**: R116 was the last PENDING round. Quality tools run (fuck-u-code 86.67, stable). Documentation updated. No code changes needed.
 **Impact**: Project now has zero PENDING rounds. state.json updated, round-116.md set COMPLETE.
 **Next**: GDB single-step of nc_reduce_sum_sqr — human-led interactive task (requires Header dispatch).
+
+## Round 119 (Final) — 2026-05-28
+**Decision**: Complete final quality/docs round. All rounds (079-119) accounted for.
+**Rationale**: R117 completed (formula deployed, failed). R118 cancelled (root cause blocker). R119 executed quality tools + docs update.
+**Quality**: fuck-u-code 86.67 (stable), time-complexity clean, CodeWrench 52 FP.
+**Status**: PROJECT_COMPLETE — all planned rounds executed or cancelled. Awaiting libnc source access for further progress on BF8 K×Co interleaved grouping.
+**Next**: Requires libnc source access — no further empirical approaches viable.
