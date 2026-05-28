@@ -1,5 +1,5 @@
 {
-  "updated": "2026-05-28 13:30:00",
+  "updated": "2026-05-28 13:32:29",
   "quality_score": "86.67",
   "rounds_completed": [
     79,
@@ -54,7 +54,7 @@
     "is_ct_regression": {
       "commit": "6119c3c",
       "change": "added d0!=d2 guard",
-      "impact": "RMS 0.641\u21920.080 (-3.86\u2192-21.99 dBFS)",
+      "impact": "RMS 0.641→0.080 (-3.86→-21.99 dBFS)",
       "fix": "reverted to (bias && bias->dims[0] == d0)",
       "verification": "RMS restored to 0.641"
     },
@@ -62,12 +62,12 @@
       "reference": 0.203,
       "current": 0.641,
       "gap_db": 9.99,
-      "note": "RMS magnitude improved but correlation=0.002 \u2014 root cause: BF8 K\u00d7Co grouping axis unreplicable without libnc source"
+      "note": "RMS magnitude improved but correlation=0.002 — root cause: BF8 K×Co grouping axis unreplicable without libnc source"
     },
     "waveform_correlation": {
       "value": 0.00176,
       "meaning": "output waveform essentially uncorrelated with reference",
-      "root_cause": "BF8 K\u00d7Co interleaved grouping axis cannot be replicated without libnc model loader source",
+      "root_cause": "BF8 K×Co interleaved grouping axis cannot be replicated without libnc model loader source",
       "next": "requires libnc source access or complete disassembly of model loader"
     },
     "libnc_disassembly": {
@@ -77,7 +77,7 @@
       "note": "BF8 decoding happens BEFORE this function in call chain"
     },
     "mogera_audio": {
-      "source": "test-simples/\u3077\u3089\u3077\u3089\u3046\u3093\u3058.opus",
+      "source": "test-simples/ぷらぷらうんじ.opus",
       "format": "48000Hz stereo Opus, 09:28-3:15:20",
       "slices_created": [
         "30s",
@@ -90,7 +90,7 @@
     "bf8_investigation": {
       "nc_convert_not_called": "dequant happens at load time, not decode",
       "codebook_architecture": "[8,1024] entries with in_proj coeffs",
-      "back_solve_recon_error": "97.7% \u2014 libnc RVQ outside 8-dim subspace",
+      "back_solve_recon_error": "97.7% — libnc RVQ outside 8-dim subspace",
       "is_ct_fix_lost": "re-applied after git checkout reversion"
     },
     "final_status": {
@@ -100,10 +100,10 @@
       "gap_db": 9.99,
       "waveform_correlation": 0.002,
       "is_ct_fixed": true,
-      "bf8_formula": "int8 signed, gs=32, scale=uint16\u2192shl 0x10\u2192float32 (GDB verified corr 0.799 in isolation)",
+      "bf8_formula": "int8 signed, gs=32, scale=uint16→shl 0x10→float32 (GDB verified corr 0.799 in isolation)",
       "bf8_deploy_result": "RMS 0.96 clipping (int8 alone), corr -0.002 (gs=32 group-norm)",
       "quality_score": 86.67,
-      "conclusion": "BF8 formula alone insufficient. Grouping axis (K\u00d7Co interleaved) requires libnc source to replicate."
+      "conclusion": "BF8 formula alone insufficient. Grouping axis (K×Co interleaved) requires libnc source to replicate."
     },
     "ld_preload": {
       "working": true,
@@ -115,8 +115,8 @@
     },
     "bf8_final": {
       "unit_norm_correlation": -0.005,
-      "conclusion": "R117: formula+gs=32 both fail in deployment \u2014 K\u00d7Co interleaved grouping axis cannot be replicated without libnc source",
-      "resolution": "REQUIRES libnc source access \u2014 no further empirical approach viable"
+      "conclusion": "R117: formula+gs=32 both fail in deployment — K×Co interleaved grouping axis cannot be replicated without libnc source",
+      "resolution": "REQUIRES libnc source access — no further empirical approach viable"
     },
     "final_quality": {
       "fuck_u_code": 86.67,
@@ -149,16 +149,16 @@
       "bypass_correlation": 0.0032,
       "sign_mismatch": 49.3,
       "decision_gate": "Branch B (corr < 0.1)",
-      "conclusion": "BF8 dequantization is NOT the root cause \u2014 libnc in_proj weights injected directly produce zero-correlation output",
+      "conclusion": "BF8 dequantization is NOT the root cause — libnc in_proj weights injected directly produce zero-correlation output",
       "code_changes": [
         "src/cpu_decoder.c: bypass_inproj_init() + RVQ loop bypass for 6 codebooks",
         "src/dac_model.c: fixed cpu_decoder_run signature mismatch (missing n_threads param)"
       ],
       "bugs_found": [
-        "dac_model.c: cpu_decoder_run forward declaration had 8 params but impl has 9 \u2014 UB on n_threads stack read (observed threads=43)"
+        "dac_model.c: cpu_decoder_run forward declaration had 8 params but impl has 9 — UB on n_threads stack read (observed threads=43)"
       ],
       "performance_findings": [
-        "conv1d_dilated_s is scalar-only, no SIMD/threading \u2014 bottleneck at block 3 (T=6656) and block 4 (T=26624)"
+        "conv1d_dilated_s is scalar-only, no SIMD/threading — bottleneck at block 3 (T=6656) and block 4 (T=26624)"
       ]
     },
     "round_100_105_decision_gate": {
@@ -170,14 +170,14 @@
         104,
         105
       ],
-      "r101": "CANCELLED \u2014 nc_reduce_sum_sqr GDB single-step not needed",
-      "r102": "CANCELLED \u2014 BF8 fix is not the solution",
+      "r101": "CANCELLED — nc_reduce_sum_sqr GDB single-step not needed",
+      "r102": "CANCELLED — BF8 fix is not the solution",
       "r103": "Full model weight LD_PRELOAD capture (all tensors, all layers)",
       "r104": "Layer-by-layer comparison and fix implementation",
       "r105": "Quality freeze + docs"
     },
     "r100_103_bypass": {
-      "bypass_result": "corr=0.0005 \u2014 BF8 not root cause",
+      "bypass_result": "corr=0.0005 — BF8 not root cause",
       "model_weight_captured": true,
       "libnc_bf8_analysis": {
         "best_formula_corr": 0.039,
@@ -188,9 +188,9 @@
       "next": "analyze captured weights for layer-wise divergence"
     },
     "transpose_fix": {
-      "old_access": "ip_f32[raw*Co+o] \u2014 transposed",
-      "correct_access": "ip_f32[o*Ci+raw] \u2014 correct layout",
-      "result": "RMS 0.641\u21920.380 (worse), correlation unchanged (0.0005)",
+      "old_access": "ip_f32[raw*Co+o] — transposed",
+      "correct_access": "ip_f32[o*Ci+raw] — correct layout",
+      "result": "RMS 0.641→0.380 (worse), correlation unchanged (0.0005)",
       "conclusion": "Transpose is compensating error for BF8 dequant"
     },
     "strategy_shift": {
@@ -200,28 +200,28 @@
     },
     "batch_injection": {
       "result": "RMS 0.9999 (clipping), corr 0.002",
-      "conclusion": "BF8 grouping axis mismatch \u2014 all 24 formulas tested fail",
+      "conclusion": "BF8 grouping axis mismatch — all 24 formulas tested fail",
       "captured_files": "/tmp/lcc_*.bin (62 files, 470MB)"
     },
     "root_cause": {
-      "issue": "BF8 grouped decode in nc_reduce_sum_sqr uses K\u00d7Co interleaved axis",
+      "issue": "BF8 grouped decode in nc_reduce_sum_sqr uses K×Co interleaved axis",
       "formula_corr": "best 0.039 across 13 formulas",
-      "evidence": "batch injection with all libnc weights \u2192 still noise",
-      "fix_required": "libnc source access for model loader \u2014 no empirical approach can replicate K\u00d7Co interleaved grouping"
+      "evidence": "batch injection with all libnc weights → still noise",
+      "fix_required": "libnc source access for model loader — no empirical approach can replicate K×Co interleaved grouping"
     },
     "next_steps": {
       "R105": "Fix batch injection transpose, isolate bottleneck by single-layer injection",
       "R106": "Implement fix for identified bottleneck (RVQ or conv1d/convtr)",
       "R107": "Quality tools, documentation, Oracle verification"
     },
-    "project_status": "FINAL \u2014 38 rounds, BF8 formula isolated (corr 0.799), grouping axis unreplicable without libnc source",
+    "project_status": "FINAL — 38 rounds, BF8 formula isolated (corr 0.799), grouping axis unreplicable without libnc source",
     "r108_conclusion": {
-      "injection_result": "clipping (RMS 0.9999) \u2014 per-layer normalization differs (K=1 vs K>1)",
+      "injection_result": "clipping (RMS 0.9999) — per-layer normalization differs (K=1 vs K>1)",
       "remaining": "GDB single-step nc_reduce_sum_sqr for BF8 grouping pattern"
     },
     "r101_r102_skipped": {
       "status": "CANCELLED",
-      "reason": "R100 proved BF8 in_proj not root cause \u2014 decision gate triggered branch B"
+      "reason": "R100 proved BF8 in_proj not root cause — decision gate triggered branch B"
     },
     "r106_r107_skipped": {
       "status": "CANCELLED",
@@ -234,15 +234,15 @@
       "expected": "RMS and correlation improvement"
     },
     "model_loader_override": {
-      "result": "12 layers overridden, corr 0.0015 \u2014 no improvement",
+      "result": "12 layers overridden, corr 0.0015 — no improvement",
       "conclusion": "dequant_weights L2 norm+gain incompatible with per-layer libnc normalization"
     },
     "close_out": {
       "total_rounds": 38,
       "empirical_approaches_exhausted": true,
-      "root_cause": "BF8 K\u00d7Co interleaved grouping axis in nc_reduce_sum_sqr (0x8310)",
+      "root_cause": "BF8 K×Co interleaved grouping axis in nc_reduce_sum_sqr (0x8310)",
       "remaining_path": "GDB single-step nc_reduce_sum_sqr SIMD kernel (requires human interactive session)",
-      "r117_conclusion": "Formula+gs=32 both insufficient in deployment \u2014 K\u00d7Co interleaved cannot be replicated without libnc source",
+      "r117_conclusion": "Formula+gs=32 both insufficient in deployment — K×Co interleaved cannot be replicated without libnc source",
       "recommendation": "Accept current state (RMS 0.641, corr 0.002) or obtain libnc source access"
     },
     "massive_info_round": {
@@ -259,47 +259,47 @@
       "note": "rescued from overwritten R110 plan"
     },
     "r113_findings": {
-      "group_size_pattern": "gs = f(K): K=1\u21922, K=7\u219214, K=8\u219216, K=16\u219216",
-      "grouping_axis": "K\u00d7Co interleaved (K first, then Co)",
+      "group_size_pattern": "gs = f(K): K=1→2, K=7→14, K=8→16, K=16→16",
+      "grouping_axis": "K×Co interleaved (K first, then Co)",
       "formula_sweep": "10+ formulas exhausted, all corr=-0.000",
-      "conclusion": "Formula not the issue \u2014 grouping axis confirmed. Stride computation needs GDB."
+      "conclusion": "Formula not the issue — grouping axis confirmed. Stride computation needs GDB."
     },
     "gdb_status": {
-      "nc_convert_capture": "working \u2014 confirms BF8 bytes, dims, types",
-      "sqr_bp": "not triggering \u2014 requires interactive GDB session",
+      "nc_convert_capture": "working — confirms BF8 bytes, dims, types",
+      "sqr_bp": "not triggering — requires interactive GDB session",
       "gdb_tsac": "CLOSED",
       "gdb_sqr": "CLOSED",
-      "remaining": "human-led GDB step-through of nc_convert\u2192sqr call path (requires libnc source or interactive session)"
+      "remaining": "human-led GDB step-through of nc_convert→sqr call path (requires libnc source or interactive session)"
     },
     "r116_completed": {
       "status": "completed",
       "date": "2026-05-28",
       "tasks": [
-        "T1: Quality tools \u2014 fuck-u-code 86.67 (baseline stable), time-complexity clean, CodeWrench 52 FP",
-        "T2: Documentation \u2014 state.json updated, decision.log appended, round-116.md set COMPLETE",
+        "T1: Quality tools — fuck-u-code 86.67 (baseline stable), time-complexity clean, CodeWrench 52 FP",
+        "T2: Documentation — state.json updated, decision.log appended, round-116.md set COMPLETE",
         "T3: No code changes (documentation-only round)",
-        "T4: Oracle verification \u2014 defer to next Header dispatch"
+        "T4: Oracle verification — defer to next Header dispatch"
       ],
       "quality_score": 86.67
     },
     "bf8_breakthrough": {
       "round": 114,
       "source": "GDB session at 0x8990",
-      "formula": "gs=32, int8_t signed, scale=uint16\u2192shl 0x10\u2192float32",
+      "formula": "gs=32, int8_t signed, scale=uint16→shl 0x10→float32",
       "validation_correlation": 0.799,
       "previous_best": 0.016,
-      "improvement": "50\u00d7"
+      "improvement": "50×"
     },
     "r117_completed": {
       "status": "completed",
       "date": "2026-05-28",
       "tests": [
-        "int8 signed formula alone \u2192 RMS 0.96 clipping, corr 0.002",
-        "gs=32 group-norm \u2192 corr -0.002 (grouping axis still wrong)"
+        "int8 signed formula alone → RMS 0.96 clipping, corr 0.002",
+        "gs=32 group-norm → corr -0.002 (grouping axis still wrong)"
       ],
-      "conclusion": "BF8 formula correct in isolation (corr 0.799) but insufficient in deployment. K\u00d7Co interleaved grouping axis cannot be replicated without libnc model loader source.",
-      "gdb_sessions": "gdb_tsac+gdb_sqr \u2192 CLOSED",
-      "next": "Requires libnc source access \u2014 no further empirical approach viable"
+      "conclusion": "BF8 formula correct in isolation (corr 0.799) but insufficient in deployment. K×Co interleaved grouping axis cannot be replicated without libnc model loader source.",
+      "gdb_sessions": "gdb_tsac+gdb_sqr → CLOSED",
+      "next": "Requires libnc source access — no further empirical approach viable"
     },
     "phase2": {
       "target": "Normal TXC + Transformer decode",
@@ -309,20 +309,27 @@
     },
     "phase2_progress": {
       "R120": "Range coder complete (get_freq, cumul, multi-bit). Normal TXC header confirmed.",
-      "R121": "Transformer catalog \u2014 190 tensors, GPT-2, 12L/d512/n4/GELU",
+      "R121": "Transformer catalog — 190 tensors, GPT-2, 12L/d512/n4/GELU",
       "R122": "Transformer IMPLEMENTED (tsac_transformer.h/c). Full forward pass.",
-      "R123": "pending \u2014 normal TXC integration + test",
-      "R124": "pending \u2014 quality tools",
-      "R125": "pending \u2014 docs + Oracle"
+      "R123": "pending — normal TXC integration + test",
+      "R124": "pending — quality tools",
+      "R125": "pending — docs + Oracle"
+    },
+    "phase3_roadmap": {
+      "rounds": 30,
+      "tasks": 140,
+      "milestones": 3,
+      "target": "v0.3.0 release",
+      "file": ".ai/ROADMAP_PHASE3.md"
     }
   },
   "quality_tools": {
     "fuck-u-code": "86.67 (stable, within margin of 86.85 baseline)",
-    "time-complexity": "dequant_weights O(n\u00b3) amortized, decode_batch hotspot",
-    "codewrench": "52 warnings \u2014 all C false positives (printf/memcpy in strings category)"
+    "time-complexity": "dequant_weights O(n³) amortized, decode_batch hotspot",
+    "codewrench": "52 warnings — all C false positives (printf/memcpy in strings category)"
   },
   "blockers": [],
   "next_rounds": [],
   "pending_rounds": [],
-  "project_status": "FINAL \u2014 38 rounds (079-117). BF8 formula isolated (corr 0.799). Grouping axis (K\u00d7Co interleaved) unreplicable without libnc source. Investigation exhausted. Awaiting libnc source access."
+  "project_status": "FINAL — 38 rounds (079-117). BF8 formula isolated (corr 0.799). Grouping axis (K×Co interleaved) unreplicable without libnc source. Investigation exhausted. Awaiting libnc source access."
 }

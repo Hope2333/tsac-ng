@@ -31,3 +31,14 @@
 - [ ] Code quality ≥85/100
 - [ ] Comprehensive test suite
 
+
+## Phase 3 (R126-R155): Production Release
+
+See [ROADMAP_PHASE3.md](ROADMAP_PHASE3.md) for detailed 30-round plan.
+
+**Milestones:**
+1. Normal TXC end-to-end decode (R126-R135, 45 tasks)
+2. Fast TXC bit-accuracy via BF8 stride fix (R136-R145, 45 tasks)
+3. Production readiness: encoder, GPU, quality 87+ (R146-R155, 44 tasks)
+
+**Target**: v0.3.0 with fast TXC corr > 0.95, normal TXC decode, GPU backends.
