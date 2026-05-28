@@ -1,20 +1,18 @@
 # Current Status — TSAC Reverse Engineering
 
-## Active Lane: PHASE_2 — Normal TXC + Transformer
+## Active Lane: M1 COMPLETE → M2 PLANNED
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| BF8 formula | 0.799 (known, deploy blocked) | — |
-| RMS | 0.641 | 0.203 |
+| Rounds | 57 (079-135) | — |
 | Quality | 86.67 | 87+ |
-| Rounds | 39 (079-119) + 6 planned (120-125) | — |
+| Normal TXC pipeline | ✅ designed | end-to-end test |
+| Transformer | ✅ 12L implemented | RoPE verify |
 
-### Phase 2 Plan: Normal TXC Decode
-| Round | Focus | Tasks |
-|-------|-------|:---:|
-| 120 | Range coder completion | 4 |
-| 121 | Transformer design | 4 |
-| 122 | Transformer implementation | 4 |
-| 123 | Integration + testing | 4 |
-| 124 | Quality tools | 4 |
-| 125 | Documentation + Oracle | 4 |
+### M1 Gaps for M2
+- End-to-end normal TXC audio test
+- RoPE position encoding verification
+- Real test file availability
+
+### M2 (R136-R145): Fast TXC Bit-Accuracy
+BF8 stride extraction → formula deployment → RMS < 1 dB target.
