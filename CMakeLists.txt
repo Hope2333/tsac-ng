@@ -42,6 +42,7 @@ set(TSAC_SOURCES
     src/main.c
     src/tsac_codec.c
     src/tsac_transformer.c
+    src/tsac_normal_decode.c
     src/dac_model.c
     src/txc_format.c
     src/model_loader.c
