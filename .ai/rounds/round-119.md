@@ -1,6 +1,6 @@
 # Round 119 — Quality + Docs + Oracle
 
-**Status**: COMPLETED | **Date**: 2026-05-28 | **Predecessor**: round-117
+**Status**: COMPLETE | **Date**: 2026-05-28 | **Predecessor**: round-117
 
 ## Tasks
 

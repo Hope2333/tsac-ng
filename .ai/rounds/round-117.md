@@ -1,6 +1,6 @@
 # Round 117 — BF8 Fix Implementation (gs=32 + int8 + uint16 scale)
 
-**Status**: COMPLETED | **Date**: 2026-05-28 | **Predecessor**: round-114 (GDB discovery)
+**Status**: COMPLETE | **Date**: 2026-05-28 | **Predecessor**: round-114 (GDB discovery)
 
 ## GDB Discovery (Round 114)
 GDB session found the actual BF8 decode at libnc 0x8990:
