@@ -118,6 +118,31 @@ void txc_header_init(TSCHeader *hdr, int stereo, int n_codebooks, int sample_rat
 int txc_write(const TSCHeader *hdr,
               const int *codebook_indices, int n_frames,
 #include "txc_parse.inc"
+        /* Normal TXC (version>=1): 16-byte header, range-coded payload */
+        if (hdr->version >= 1) {
+            hdr->data_offset = 16;
+
+            /* CRC32 verification (last 4 bytes of payload) */
+            size_t payload_bytes = data_size - (size_t)hdr->data_offset;
+            if (payload_bytes >= 4) {
+                uint32_t stored = read_be32(data + data_size - 4);
+                uint32_t computed = crc32(data + hdr->data_offset,
+                                           payload_bytes - 4, 0xFFFFFFFF);
+                if (stored != computed) {
+                    fprintf(stderr, "tsac-ng: CRC32 mismatch (stored=0x%08x computed=0x%08x)\n",
+                            stored, computed);
+                    return TSAC_ERR_CODEC;
+                }
+            }
+
+            fprintf(stderr,
+                    "tsac-ng: normal TXC decode not yet implemented "
+                    "(version=%u, frames=%u, codebooks=%u)\n",
+                    hdr->version, hdr->n_blocks, hdr->n_codebooks);
+            return TSAC_ERR_CODEC;
+        }
+
+        /* Fast TXC (version=0): detect raw uint8 vs 10-bit packed */
         int header_end = 8;
         while (header_end < 256 && header_end < (int)data_size &&
                ((data_size - (size_t)header_end) % (size_t)hdr->n_codebooks) != 0) {
@@ -133,7 +158,7 @@ int txc_write(const TSCHeader *hdr,
 
         /* Validate: sample first bytes to detect range-coded format.
          * Raw indices are [0, cb_size-1] where cb_size is the
-         * smallest power of two >= n_codebooks (e.g. nc=6 → cb=8). */
+         * smallest power of two >= n_codebooks (e.g. nc=6 \u2192 cb=8). */
         int cb_size = 1;
         while (cb_size < (int)hdr->n_codebooks)
             cb_size *= 2;
