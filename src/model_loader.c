@@ -123,22 +123,26 @@ int model_loader_load(const char *path, DACModel *model)
                 if (ov_size == dims_prod * 4) {
                     float *ov_f32 = (float *)malloc(ov_size);
                     fread(ov_f32, 1, ov_size, ovf);
-                    /* Runtime format is [Co][Ci][K] for ALL weight_v tensors.
-                     * Convert to flat [d0][K][d2] order for dequant_weights. */
+                    /* Runtime format is [Co][Ci][K]. Convert to flat [d0][K][d2] order
+                     * so dequant_weights' rearrangement produces correct [Co][Ci][K].
+                     * For conv1d (d0!=d2): d0=Ci, d1=K, d2=Co. flat [Ci][K][Co].
+                     * For convt (d0==d2):  d0=Co, d1=K, d2=Ci. flat [Co][K][Ci]. */
                     int d0 = t->dims[0], d1 = t->dims[1], d2 = t->dims[2];
                     int K = d1;
-                    int Ci = (nd >= 3 && d0 == d2) ? d2 : d0;
-                    int Co = (nd >= 3 && d0 == d2) ? d0 : d2;
+                    int Ci = (d0 == d2) ? d2 : d0;
+                    int Co = (d0 == d2) ? d0 : d2;
                     float *flat_f32 = (float *)malloc(ov_size);
                     for (int ci = 0; ci < Ci; ci++)
                         for (int k = 0; k < K; k++)
                             for (int co = 0; co < Co; co++) {
-                                /* [Co][Ci][K] runtime index (SAME for all layers) */
+                                /* [Co][Ci][K] runtime index */
                                 int rt_idx = co * Ci * K + ci * K + k;
-                                /* Flat [d0][K][d2] index */
+                                /* Flat index matching dequant_weights' src_idx computation:
+                                 * For conv1d (is_ct=0): src_idx = ci * K * Co + k * Co + co
+                                 * For convt  (is_ct=1): src_idx = co * K * Ci + k * Ci + ci */
                                 int flat_idx = (d0 == d2)
-                                    ? co * K * Ci + k * Ci + ci  /* [Co][K][Ci] for convt */
-                                    : ci * K * Co + k * Co + co; /* [Ci][K][Co] for conv1d */
+                                    ? co * K * Ci + k * Ci + ci   /* [Co][K][Ci] for convt */
+                                    : ci * K * Co + k * Co + co;  /* [Ci][K][Co] for conv1d */
                                 flat_f32[flat_idx] = ov_f32[rt_idx];
                             }
                     free(t->data);

@@ -39,7 +39,7 @@
 
 #define BATCH_FRAMES    16
 #define CONTEXT_PAD     10
-#define DEBUG_DECODER    1
+#define DEBUG_DECODER    0
 
 #if DEBUG_DECODER
 #define DBG(...) fprintf(stderr, __VA_ARGS__)
@@ -279,16 +279,24 @@ float *dequant_weights(const DACTensor *weight_v, const DACTensor *weight_g,
         }
     }
 
-    /* Output in [Co][Ci][K] layout regardless of layer type.
-     * Both conv1d and convt kernels access w[oc, ic, j] = w[oc*Ci*K + ic*K + j]. */
+    /* Output layout:
+     * - conv1d (is_ct=0): [Co][Ci][K] — standard conv1d kernel access
+     * - convt  (is_ct=1): [Co][K][Ci] — nc_conv_transpose_1d reshapes to
+     *   [Co,K,1,Ci] and uses NHWC access; the native flat order IS [Co][K][Ci].
+     *   Rearranging to [Co][Ci][K] would swap (K,Ci) dims and break access. */
     for (int ci = 0; ci < Ci; ci++) {
         for (int k = 0; k < K; k++) {
             for (int co = 0; co < Co; co++) {
-                int src_idx = is_ct
-                    ? co * K * Ci + k * Ci + ci
-                    : ci * K * Co + k * Co + co;
-                int dst_idx = co * Ci * K + ci * K + k;
-                w_f32[dst_idx] = src_f32[src_idx];
+                if (is_ct) {
+                    /* convt: keep flat [Co][K][Ci] order (no rearrangement) */
+                    int src_idx = co * K * Ci + k * Ci + ci;
+                    w_f32[src_idx] = src_f32[src_idx];
+                } else {
+                    /* conv1d: flat [Ci][K][Co] → [Co][Ci][K] */
+                    int src_idx = ci * K * Co + k * Co + co;
+                    int dst_idx = co * Ci * K + ci * K + k;
+                    w_f32[dst_idx] = src_f32[src_idx];
+                }
             }
         }
     }

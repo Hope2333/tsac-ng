@@ -57,7 +57,8 @@ static void conv1d_strided_s(float *o, const float *x, const float *w, const flo
 
 void convt1d_s(float *o, const float *x, const float *w,
                int Ti, int To, int K, int Ci, int Co, int stride) {
-    /* Weight layout: [Co][Ci][K]. Access: w[oc * Ci * K + ic * K + j]. */
+    /* Weight layout: [Co][K][Ci] — matches nc_conv_transpose_1d's native
+     * flat order. Access: w[oc * K * Ci + j * Ci + ic]. */
     int P = K/2;
     memset(o, 0, (size_t)Co*To*sizeof(float));
     for (int ic = 0; ic < Ci; ic++) for (int ii = 0; ii < Ti; ii++) {
@@ -65,7 +66,7 @@ void convt1d_s(float *o, const float *x, const float *w,
         for (int oc = 0; oc < Co; oc++) for (int j = 0; j < K; j++) {
             int oi = ii*stride + j - P;
             if (oi >= 0 && oi < To)
-                o[oc*To+oi] += v * w[oc * Ci * K + ic * K + j];
+                o[oc*To+oi] += v * w[oc * K * Ci + j * Ci + ic];
         }
     }
 }
@@ -217,8 +218,8 @@ void convt1d_avx(float *o, const float *x, const float *w,
                 for (int j = 0; j < K; j++) {
                     int oi = ii*stride + j - P;
                     if (oi >= 0 && oi < To) {
-                        /* Load 8 weights: w[ocb:ocb+8, ic, j] */
-                        int w_idx = ocb * Ci * K + ic * K + j;
+                        /* Load 8 weights [Co][K][Ci]: w[ocb:ocb+8, j, ic] */
+                        int w_idx = ocb * K * Ci + j * Ci + ic;
                         __m256 w8 = _mm256_loadu_ps(&w[w_idx]);
                         /* Load current output values */
                         __m256 ov = _mm256_loadu_ps(&o[ocb*To + oi]);
@@ -235,7 +236,7 @@ void convt1d_avx(float *o, const float *x, const float *w,
                 for (int j = 0; j < K; j++) {
                     int oi = ii*stride + j - P;
                     if (oi >= 0 && oi < To) {
-                        o[oc*To+oi] += v * w[oc*Ci*K + ic*K + j];
+                        o[oc*To+oi] += v * w[oc*K*Ci + j*Ci + ic];
                     }
                 }
             }
@@ -402,7 +403,7 @@ void convt1d_avx512(float *o, const float *x, const float *w,
                     int oi = ii*stride + j - P;
                     if (oi >= 0 && oi < To) {
                         /* Load 16 weights */
-                        int w_idx = ocb * Ci * K + ic * K + j;
+                        int w_idx = ocb * K * Ci + j * Ci + ic;
                         __m512 w16 = _mm512_loadu_ps(&w[w_idx]);
                         /* Load current output values */
                         __m512 ov = _mm512_loadu_ps(&o[ocb*To + oi]);
@@ -419,7 +420,7 @@ void convt1d_avx512(float *o, const float *x, const float *w,
                 for (int j = 0; j < K; j++) {
                     int oi = ii*stride + j - P;
                     if (oi >= 0 && oi < To) {
-                        o[oc*To+oi] += v * w[oc*Ci*K + ic*K + j];
+                        o[oc*To+oi] += v * w[oc*K*Ci + j*Ci + ic];
                     }
                 }
             }
