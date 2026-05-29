@@ -356,14 +356,20 @@ float *dequant_weights(const DACTensor *weight_v, const DACTensor *weight_g,
         }
     }
 
-    /* Without L2 norm (K>1 decoder weights): just rearrange */
+    /* Without L2 norm (K>1 decoder weights): rearrange + apply weight_g */
+    const float *g_data = weight_g ? (const float *)weight_g->data : NULL;
     for (int ci = 0; ci < Ci; ci++)
         for (int k = 0; k < K; k++)
             for (int co = 0; co < Co; co++) {
+                float g = 1.0f;
+                if (g_data) {
+                    int g_idx = is_ct ? ci : co;
+                    if (g_idx < (int)weight_g->dims[2]) g = g_data[g_idx];
+                }
                 if (is_ct) {
-                    w_f32[co * K * Ci + k * Ci + ci] = src_f32[co * K * Ci + k * Ci + ci];
+                    w_f32[co * K * Ci + k * Ci + ci] = src_f32[co * K * Ci + k * Ci + ci] * g;
                 } else {
-                    w_f32[co * Ci * K + ci * K + k] = src_f32[ci * K * Co + k * Co + co];
+                    w_f32[co * Ci * K + ci * K + k] = src_f32[ci * K * Co + k * Co + co] * g;
                 }
             }
 
