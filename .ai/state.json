@@ -1,5 +1,5 @@
 {
-  "updated": "2026-05-29 21:41:50",
+  "updated": "2026-05-29 21:44:31",
   "quality_score": "85.53",
   "rounds_completed": [
     79,
@@ -451,6 +451,16 @@
       "strategy": "layer-by-layer activation comparison via GDB",
       "decision_gates": 5,
       "version_target": "v0.2.0 if corr>0.5, v0.1.4 if not"
+    },
+    "phase4_expanded": {
+      "rounds": 25,
+      "tasks": 110,
+      "sub_phases": 5,
+      "target_versions": {
+        "v0.2.0": "corr>0.5",
+        "v0.3.0": "corr>0.9",
+        "v0.1.4": "corr<0.5"
+      }
     }
   },
   "quality_tools": {
