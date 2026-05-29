@@ -1,18 +1,16 @@
-# Current Status — TSAC Reverse Engineering
-
-## Active Lane: M1 COMPLETE → M2 PLANNED
+# Current Status
+## Active Lane: M2 (R136-R140) — BF8 Convtr GDB + Fast TXC Bit-Accuracy
 
 | Metric | Value | Target |
 |--------|-------|--------|
 | Rounds | 57 (079-135) | — |
 | Quality | 86.67 | 87+ |
-| Normal TXC pipeline | ✅ designed | end-to-end test |
-| Transformer | ✅ 12L implemented | RoPE verify |
 
-### M1 Gaps for M2
-- End-to-end normal TXC audio test
-- RoPE position encoding verification
-- Real test file availability
-
-### M2 (R136-R145): Fast TXC Bit-Accuracy
-BF8 stride extraction → formula deployment → RMS < 1 dB target.
+### M2 Plan
+| Round | Focus | Tasks |
+|:-----:|-------|:----:|
+| 136 | GDB convtr trace | 5 |
+| 137 | BF8 convtr stride impl | 5 |
+| 138 | Per-layer verify | 4 |
+| 139 | WAV validation | 4 |
+| 140 | Quality + sign-off | 4 |

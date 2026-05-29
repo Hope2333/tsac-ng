@@ -311,3 +311,21 @@ Round 033: in_proj+out_proj implemented (57fd801). RMS unchanged — BF8 dequant
 **Quality**: fuck-u-code 86.67 (stable), time-complexity clean, CodeWrench 52 FP.
 **Status**: PROJECT_COMPLETE — all planned rounds executed or cancelled. Awaiting libnc source access for further progress on BF8 K×Co interleaved grouping.
 **Next**: Requires libnc source access — no further empirical approaches viable.
+
+## R132-R134 Batch — 2026-05-29
+**Decision**: Complete Phase 3 batch: Transformer optimization + Normal TXC quality + Docs.
+**Rationale**: R132 profiled transformer (81M FLOPs/frame, MLP dominant 67%). R133 captured reference WAVs for normal TXC. R134 documented full decode flow.
+**Impact**: 56 rounds complete. quality 86.67 stable. 0 pending.
+**Next**: R135-R137 — integrate transformer with range coder for end-to-end normal TXC decode.
+
+## Round 137 — BF8 Formula Deployment (2026-05-29)
+### Key Decisions
+- **BF8 data layout**: Changed from interleaved [values][scale] to [all values][all scales].
+  Previous code read value bytes as scale bytes and vice versa, causing completely wrong output.
+- **Scale formula**: Fixed `byte/127` → `byte/(127*4096)`. The missing factor 4096 (2^12)
+  made all weights 4096x too large. After L2 norm this cancelled out, but without L2 norm
+  it produces correct magnitudes matching libnc.
+- **Weight processing**: Removed weight_g premultiplication and L2 normalization.
+  libnc captured weights show neither is applied at load time.
+- **Correlation**: Per-layer improved from 0.0003 to 0.71 (K>1) / 0.27-0.38 (K=1).
+- **WAV**: Still noise — root cause moved from dequant_weights to decode pipeline.

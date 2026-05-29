@@ -278,9 +278,10 @@ float *dequant_weights(const DACTensor *weight_v, const DACTensor *weight_g,
         }
     }
 
-    /* Output in [Co, Ci, K] layout without L2 normalization.
-     * Libnc's BF8 weights are pre-scaled via byte/127/4096 and don't
-     * have per-channel L2 norm applied at load time. */
+    /* Output in [Co, Ci, K] layout without L2/weight_g.
+     * NC_convert output is pre-L2-normed per-channel. weight_g is NOT
+     * pre-multiplied (verified against libnc captures). Both L2 and
+     * weight_g must be handled at the convolution level if needed. */
     for (int ci = 0; ci < Ci; ci++) {
         for (int k = 0; k < K; k++) {
             for (int co = 0; co < Co; co++) {
