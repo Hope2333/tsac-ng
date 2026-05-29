@@ -39,7 +39,7 @@
 
 #define BATCH_FRAMES    16
 #define CONTEXT_PAD     10
-#define DEBUG_DECODER    0
+#define DEBUG_DECODER    1
 
 #if DEBUG_DECODER
 #define DBG(...) fprintf(stderr, __VA_ARGS__)
@@ -201,9 +201,10 @@ static CPUOps get_ops(void) {
     }
 #endif
 
-    /* NOTE: convt1d_avx512 was tested and produces 27× larger activations
-     * than convt1d_s with identical inputs/weights. FMA accumulation pattern
-     * needs investigation. Using scalar convt for correctness. */
+    /* NOTE: convt1d_avx512 and conv1d_avx512 both have suspected FMA bugs
+     * producing 27× and 70× larger activations respectively. Using scalar
+     * kernels for correctness until SIMD bugs are fixed. */
+    ops.conv1d = conv1d_s;
     ops.conv_transpose1d = convt1d_s;
     return ops;
 }
@@ -298,17 +299,34 @@ float *dequant_weights(const DACTensor *weight_v, const DACTensor *weight_g,
 }
 
 /* ================================================================ */
-/*  DAC decoder entry point                                         */
+/*  Activation dump (for GDB comparison with original tsac)         */
 /* ================================================================ */
 
 #if DEBUG_DECODER
+static int dump_count = 0;
+
+static void dump_activation(const float *data, int n, const char *name) {
+    char path[256];
+    snprintf(path, sizeof(path), "/tmp/act_%s.bin", name);
+    FILE *f = fopen(path, "wb");
+    if (f) {
+        fwrite(data, sizeof(float), n, f);
+        fclose(f);
+    }
+    float max_v = 0, sum = 0, sum2 = 0;
+    for (int i = 0; i < n; i++) { float a = fabsf(data[i]); if (a > max_v) max_v = a; sum += data[i]; sum2 += data[i]*data[i]; }
+    fprintf(stderr, "[ACT] %s: n=%d max_abs=%.2f rms=%.4f mean=%.4f\n", name, n, max_v, sqrtf(sum2/n), sum/n);
+}
+
 static int count_nan(const float *data, int n) {
     int count = 0;
-    for (int i = 0; i < n; i++) {
-        if (isnan(data[i])) count++;
-    }
+    for (int i = 0; i < n; i++) if (isnan(data[i])) count++;
     return count;
 }
+
+#define DUMP_ACT(data, n, name) dump_activation(data, n, name)
+#else
+#define DUMP_ACT(data, n, name) ((void)0)
 #endif
 
 /* Decode one batch of codebook indices through the full DAC graph.
@@ -395,6 +413,7 @@ static int decode_batch(DACTensor *ts, int nt,
     }
     free(rvq_out);
     free(m0_w);
+    DUMP_ACT(buf0, m0_Co*ctx_frames, "m0_conv1d");
 
     DBG("[DEBUG] After m0 conv1d NaN: %d/%d\n", count_nan(buf0, m0_Co*ctx_frames), m0_Co*ctx_frames);
     {

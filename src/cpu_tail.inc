@@ -29,6 +29,7 @@
                    cur_frames, m6_K, m6_Ci, m6_Co);
 
         DBG("[DEBUG] After m6 conv1d NaN: %d/%d\n", count_nan(output, m6_Co*cur_frames), m6_Co*cur_frames);
+        DUMP_ACT(output, m6_Co*cur_frames, "m6_pre_tanh");
 
         /* Compute how many output samples to discard from the beginning
          * due to context padding. code_offset is the start of the context

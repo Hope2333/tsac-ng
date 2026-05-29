@@ -55,6 +55,8 @@
             }
         }
 
+        char dump_name[64]; snprintf(dump_name, sizeof(dump_name), "block%d_convt", block);
+        DUMP_ACT(next_buf, target_C*n_frames_out, dump_name);
         DBG("[DEBUG] After block%d convt NaN: %d/%d\n", block, count_nan(next_buf, target_C*n_frames_out), target_C*n_frames_out);
         {
             float mv = 0; for (int i = 0; i < target_C*n_frames_out; i++) { float a = fabsf(next_buf[i]); if (a > mv) mv = a; }

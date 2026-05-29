@@ -123,25 +123,22 @@ int model_loader_load(const char *path, DACModel *model)
                 if (ov_size == dims_prod * 4) {
                     float *ov_f32 = (float *)malloc(ov_size);
                     fread(ov_f32, 1, ov_size, ovf);
-                    /* Override data is in [Co][Ci][K] runtime order. Convert to
-                     * flat [d0][K][d2] order so dequant_weights' existing
-                     * rearrangement works correctly. */
+                    /* Runtime format is [Co][Ci][K] for ALL weight_v tensors.
+                     * Convert to flat [d0][K][d2] order for dequant_weights. */
                     int d0 = t->dims[0], d1 = t->dims[1], d2 = t->dims[2];
-                    int Ci = (nd >= 3 && d0 == d2) ? d2 : d0;  /* heuristic is_ct */
-                    int Co = (nd >= 3 && d0 == d2) ? d0 : d2;
                     int K = d1;
+                    int Ci = (nd >= 3 && d0 == d2) ? d2 : d0;
+                    int Co = (nd >= 3 && d0 == d2) ? d0 : d2;
                     float *flat_f32 = (float *)malloc(ov_size);
                     for (int ci = 0; ci < Ci; ci++)
                         for (int k = 0; k < K; k++)
                             for (int co = 0; co < Co; co++) {
-                                /* [Co][Ci][K] runtime index */
+                                /* [Co][Ci][K] runtime index (SAME for all layers) */
                                 int rt_idx = co * Ci * K + ci * K + k;
-                                /* [d0][K][d2] flat index (for dequant output loop) */
-                                /* For is_ct: d0=Co, d1=K, d2=Ci → flat = co*K*Ci + k*Ci + ci */
-                                /* For !is_ct: d0=Ci, d1=K, d2=Co → flat = ci*K*Co + k*Co + co */
-                                int flat_idx;
-                                if (d0 == d2) /* is_ct */ flat_idx = co * K * Ci + k * Ci + ci;
-                                else flat_idx = ci * K * Co + k * Co + co;
+                                /* Flat [d0][K][d2] index */
+                                int flat_idx = (d0 == d2)
+                                    ? co * K * Ci + k * Ci + ci  /* [Co][K][Ci] for convt */
+                                    : ci * K * Co + k * Co + co; /* [Ci][K][Co] for conv1d */
                                 flat_f32[flat_idx] = ov_f32[rt_idx];
                             }
                     free(t->data);
@@ -149,7 +146,7 @@ int model_loader_load(const char *path, DACModel *model)
                     t->data_size = (int)ov_size;
                     t->elem_size = 4;
                     free(ov_f32);
-                    fprintf(stderr, "[model_loader] LIBNC OVR: %s (%ld bytes) converted to flat\n",
+                    fprintf(stderr, "[model_loader] LIBNC OVR: %s (%ld bytes) [Co][Ci][K]→flat\n",
                             t->name, ov_size);
                 }
                 fclose(ovf);
