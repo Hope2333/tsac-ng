@@ -278,10 +278,8 @@ float *dequant_weights(const DACTensor *weight_v, const DACTensor *weight_g,
         }
     }
 
-    /* Output in [Co, Ci, K] layout without L2/weight_g.
-     * NC_convert output is pre-L2-normed per-channel. weight_g is NOT
-     * pre-multiplied (verified against libnc captures). Both L2 and
-     * weight_g must be handled at the convolution level if needed. */
+    /* Output in [Co][Ci][K] layout regardless of layer type.
+     * Both conv1d and convt kernels access w[oc, ic, j] = w[oc*Ci*K + ic*K + j]. */
     for (int ci = 0; ci < Ci; ci++) {
         for (int k = 0; k < K; k++) {
             for (int co = 0; co < Co; co++) {
