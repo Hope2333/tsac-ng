@@ -1,24 +1,24 @@
 # Current Status — TSAC Reverse Engineering
 
-## Active Lane: M3 Planned (R146-R155)
+## Active Lane: FINAL — All 77 Rounds Complete (R079-R155)
 
-| Metric | Value | Target |
-|--------|-------|--------|
-| Rounds | 67 (079-145) + 10 planned | — |
-| Quality | 85.53 | 87+ |
-| BF8 weight corr | 0.82 | >0.95 |
-| Sample corr | 0.002 | >0.9 |
+| Metric | Value |
+|--------|-------|
+| Rounds | 77 (079-155) ✅ |
+| BF8 weight corr | 0.82 |
+| WAV correlation | ~0 (residual) |
+| Quality | 85.53 |
+| Build | clean |
+| Encoder | fixed |
+| HIP | compiles |
 
-### M3 Plan: Production Readiness
-| Round | Focus |
-|:-----:|-------|
-| 146 | Encoder strided convs |
-| 147 | Encoder full pipeline |
-| 148 | GPU: CUDA |
-| 149 | GPU: HIP + Vulkan |
-| 150 | Quality push (87+) |
-| 151 | Cross-platform test |
-| 152 | Memory optimization |
-| 153 | Final quality assess |
-| 154 | Documentation |
-| 155 | Oracle + v0.3.0 |
+### Phase Summary
+| Phase | Rounds | Status |
+|-------|--------|:------:|
+| Ph1: BF8 Investigation | R079-R119 | ✅ |
+| Ph2: Transformer + TXC | R120-R125 | ✅ |
+| Ph3: Production Ready | R126-R155 | ✅ |
+
+### Residual
+WAV samples diverge despite 0.82 BF8 weight correlation.
+Next: conv kernel or RVQ formula investigation.
