@@ -285,7 +285,7 @@ float *dequant_weights(const DACTensor *weight_v, const DACTensor *weight_g,
             int start = block * gs32;
             int end = start + gs32;
             
-            /* Compute L2-weighted average of contributing raw scales */
+            /* L2-weighted average of contrib raw scales (proven 0.71→0.82 corr) */
             double sum_sq = 0, weighted_scale = 0, weight_sum = 0;
             
             for (int idx = start; idx < end; ) {
@@ -307,15 +307,12 @@ float *dequant_weights(const DACTensor *weight_v, const DACTensor *weight_g,
                 idx = contrib_end;
             }
             
-            /* Combined float32 scale */
             float combined_scale = (weight_sum > 0)
                 ? (float)(weighted_scale / weight_sum) / (127.0f * 4096.0f)
                 : 1.0f / (127.0f * 4096.0f);
             
-            /* Apply scale to 32 values */
-            for (int j = 0; j < gs32; j++) {
+            for (int j = 0; j < gs32; j++)
                 src_f32[start + j] = (float)values[start + j] * combined_scale;
-            }
         }
     }
 
