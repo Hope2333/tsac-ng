@@ -40,3 +40,14 @@ cat > .ai/rounds/round-147.md << 'CEOF'
 ### T3: Test fast TXC encode → original tsac decode
 ### T4: Measure encode quality (PESQ/STOI vs original tsac encoder)
 ### T5: Document encode status in README
+
+## 🔬 Explore Agent Findings (bg_8498a938)
+### Critical Issues Discovered
+1. **CPU tensor naming mismatch**: Uses `encoder.block.X` but model has `encoder.model.X` — loads NO actual weights
+2. **dequant_weights is_ct bug**: K=4/8/16 encoder convs mis-classified as convtranspose
+3. **conv1d_strided_s deprecated**: Must migrate to conv1d_dilated_s
+4. **No SIMD strided convs**: Scalar-only, no AVX/NEON variants
+
+### GPU Encoder Issues
+5. **CUDA/HIP: stride=1 throughout** — no temporal compression
+6. **conv1d_strided_kernel exists but NOT called** — just needs wiring
