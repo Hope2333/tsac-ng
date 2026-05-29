@@ -201,11 +201,8 @@ static CPUOps get_ops(void) {
     }
 #endif
 
-    /* NOTE: convt1d_avx512 and conv1d_avx512 both have suspected FMA bugs
-     * producing 27× and 70× larger activations respectively. Using scalar
-     * kernels for correctness until SIMD bugs are fixed. */
-    ops.conv1d = conv1d_s;
-    ops.conv_transpose1d = convt1d_s;
+    /* AVX-512 conv1d weight gather fix applied (stride-K weight loading) */
+    /* convt1d_avx512 also uses correct [Co][K][Ci] access pattern */
     return ops;
 }
 

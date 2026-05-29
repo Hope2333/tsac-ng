@@ -350,24 +350,27 @@ void conv1d_avx512(float *o, const float *x, const float *w, const float *b,
         for (int oi = 0; oi < T; oi++) {
             __m512 sum16 = bias_vec;
             
-            /* Vectorized loop over input channels (16 at a time) */
-            for (int icb = 0; icb < Ci_block; icb += 16) {
-                for (int j = 0; j < K; j++) {
-                    int ii = oi + j - P;
-                    if (ii >= 0 && ii < T) {
-                        /* Load 16 input values */
+            /* Vectorized loop: for each kernel position j, process 16 input channels.
+             * Weight layout [Co][Ci][K]: w[oc][icb+k][j] is at stride K apart.
+             * Must gather weights with stride K, NOT contiguous load. */
+            for (int j = 0; j < K; j++) {
+                int ii = oi + j - P;
+                if (ii >= 0 && ii < T) {
+                    for (int icb = 0; icb < Ci_block; icb += 16) {
                         __m512 x16 = gather16(x, icb, ii, T, Ci);
-                        /* Load 16 weights (contiguous) */
-                        int w_idx = oc * Ci * K + icb * K + j;
-                        __m512 w16 = _mm512_loadu_ps(&w[w_idx]);
-                        /* FMA: sum16 += x16 * w16 */
+                        /* Gather weights: w[oc][icb..icb+15][j] stride=K */
+                        float wt[16];
+                        for (int k = 0; k < 16; k++)
+                            wt[k] = w[oc * Ci * K + (icb + k) * K + j];
+                        __m512 w16 = _mm512_loadu_ps(wt);
                         sum16 = _mm512_fmadd_ps(x16, w16, sum16);
                     }
                 }
             }
             
-            /* Horizontal reduce sum16 to scalar */
-            float sum = hsum512_ps(sum16);
+            /* Horizontal reduce sum16 to scalar. Bias was broadcast to 16 lanes,
+             * so subtract the excess 15×b[oc] to get single bias count. */
+            float sum = hsum512_ps(sum16) - (b ? 15.0f * b[oc] : 0.0f);
             
             /* Handle remaining channels (Ci % 16) with scalar fallback */
             for (int ic = Ci_block; ic < Ci; ic++) {
