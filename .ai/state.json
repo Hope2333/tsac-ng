@@ -1,5 +1,5 @@
 {
-  "updated": "2026-05-29 21:22:33",
+  "updated": "2026-05-29 21:41:50",
   "quality_score": "85.53",
   "rounds_completed": [
     79,
@@ -443,6 +443,14 @@
       "encoder_fixed": true,
       "hip_compiles": true,
       "residual": "WAV sample divergence — conv kernel or RVQ formula"
+    },
+    "phase4_plan": {
+      "rounds": "R156-R165",
+      "tasks": 40,
+      "target": "WAV correlation > 0.5",
+      "strategy": "layer-by-layer activation comparison via GDB",
+      "decision_gates": 5,
+      "version_target": "v0.2.0 if corr>0.5, v0.1.4 if not"
     }
   },
   "quality_tools": {
