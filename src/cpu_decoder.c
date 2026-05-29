@@ -234,8 +234,11 @@ float *dequant_weights(const DACTensor *weight_v, const DACTensor *weight_g,
 
     /* Determine layer type: conv_transpose has bias->dims[0] == weight_v->dims[0],
      * meaning the stored layout is [Co, K, Ci] rather than [Ci, K, Co].
-     * K-based heuristic fails for encoder convs with K=4/8/16. */
-    int is_ct = (bias && bias->dims[0] == d0) ? 1 : 0;
+     * Exception: encoder strided convs (block.4.weight_v) have bias->dims[0]==d0
+     * but use conv1d layout [Ci, K, Co] with K=4/8/16 stride=K/2. */
+    const char *name = weight_v->name;
+    int is_ct = (bias && bias->dims[0] == d0 &&
+                 !(name && strstr(name, "block.4.weight_v"))) ? 1 : 0;
     int Ci = is_ct ? d2 : d0;
 
     if (is_conv_transpose) *is_conv_transpose = is_ct;

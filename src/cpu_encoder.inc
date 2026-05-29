@@ -63,27 +63,29 @@ int cpu_encoder_run(DACTensor *ts, int nt,
 
         /* Blocks 4→1: strided convs for temporal reduction */
         int enc_c_out[4] = {128, 256, 512, 1024};
-        int strides[4] = {8, 4, 4, 2}; /* K/2-based strides: 320→40→10→2→1 */
+        /* Stride = K/2 from weight tensor dims. Each block.4 weight_v has
+         * dims=[Ci, K, Co] with K=4/8/16/16. Compute stride dynamically. */
         for (int blk = 4; blk >= 1; blk--) {
             int idx = 4 - blk;
-            int stride = strides[idx];
-            int nxt_T = (cur_T + stride - 1) / stride;
 
             /* Snake before conv */
             char sn[128]; snprintf(sn, sizeof(sn), "encoder.block.%d.block.3.alpha", blk);
             DACTensor *sa = tf(ts, nt, sn);
             if (sa) snake_s(cur, cur, (const float *)sa->data, cur_C * cur_T, sa->dims[0]);
 
-            /* Strided conv1d for channel expansion + temporal reduction */
+            /* Strided conv1d for channel expansion + temporal reduction.
+             * Stride = K/2 computed from weight tensor dims. */
             char wvn[128]; snprintf(wvn, sizeof(wvn), "encoder.block.%d.block.4.weight_v", blk);
             char wgn[128]; snprintf(wgn, sizeof(wgn), "encoder.block.%d.block.4.weight_g", blk);
             char bn[128];  snprintf(bn, sizeof(bn), "encoder.block.%d.block.4.bias", blk);
             DACTensor *wv = tf(ts, nt, wvn), *wg = tf(ts, nt, wgn), *b = tf(ts, nt, bn);
             int c_Ci, c_K, c_Co;
             float *cw = dequant_weights(wv, wg, b, &c_Ci, &c_K, &c_Co, NULL);
+            int c_stride = c_K / 2;
+            int nxt_T = (cur_T + c_stride - 1) / c_stride;
             float *nxt = (float *)malloc((size_t)enc_c_out[idx] * nxt_T * sizeof(float));
             if (cw && c_Ci <= cur_C)
-                conv1d_strided_s(nxt, cur, cw, b?(const float*)b->data:NULL, cur_T, nxt_T, c_K, c_Ci, c_Co, stride);
+                conv1d_strided_s(nxt, cur, cw, b?(const float*)b->data:NULL, cur_T, nxt_T, c_K, c_Ci, c_Co, c_stride);
             free(cur); free(cw); cur = nxt; cur_C = enc_c_out[idx]; cur_T = nxt_T;
 
             /* Inner residual units on reduced temporal dimension */
