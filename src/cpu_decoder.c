@@ -252,7 +252,13 @@ float *dequant_weights(const DACTensor *weight_v, const DACTensor *weight_g,
     float *src_f32 = (float *)malloc((size_t)src_size * sizeof(float));
     if (!src_f32) { free(w_f32); return NULL; }
 
-    if (weight_v->elem_size == 4) {
+    if (weight_v->elem_size == 0) {
+        /* LibNC override: data is already [Co][Ci][K] float32.
+         * Copy directly to w_f32, skip rearrangement. */
+        memcpy(w_f32, weight_v->data, (size_t)src_size * sizeof(float));
+        free(src_f32);
+        return w_f32;
+    } else if (weight_v->elem_size == 4) {
         memcpy(src_f32, weight_v->data, (size_t)src_size * sizeof(float));
     } else if (weight_v->data_size == src_size) {
         const uint8_t *v_data = weight_v->data;

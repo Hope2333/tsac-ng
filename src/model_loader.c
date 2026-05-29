@@ -127,30 +127,15 @@ int model_loader_load(const char *path, DACModel *model)
                      * so dequant_weights' rearrangement produces correct [Co][Ci][K].
                      * For conv1d (d0!=d2): d0=Ci, d1=K, d2=Co. flat [Ci][K][Co].
                      * For convt (d0==d2):  d0=Co, d1=K, d2=Ci. flat [Co][K][Ci]. */
-                    int d0 = t->dims[0], d1 = t->dims[1], d2 = t->dims[2];
-                    int K = d1;
-                    int Ci = (d0 == d2) ? d2 : d0;
-                    int Co = (d0 == d2) ? d0 : d2;
-                    float *flat_f32 = (float *)malloc(ov_size);
-                    for (int ci = 0; ci < Ci; ci++)
-                        for (int k = 0; k < K; k++)
-                            for (int co = 0; co < Co; co++) {
-                                /* [Co][Ci][K] runtime index */
-                                int rt_idx = co * Ci * K + ci * K + k;
-                                /* Flat index matching dequant_weights' src_idx computation:
-                                 * For conv1d (is_ct=0): src_idx = ci * K * Co + k * Co + co
-                                 * For convt  (is_ct=1): src_idx = co * K * Ci + k * Ci + ci */
-                                int flat_idx = (d0 == d2)
-                                    ? co * K * Ci + k * Ci + ci   /* [Co][K][Ci] for convt */
-                                    : ci * K * Co + k * Co + co;  /* [Ci][K][Co] for conv1d */
-                                flat_f32[flat_idx] = ov_f32[rt_idx];
-                            }
+                    /* Runtime format IS [Co][Ci][K] float32 (nc_convert output).
+                     * Store directly as-is. Use elem_size=0 sentinel to signal
+                     * dequant_weights that data is already in [Co][Ci][K] order,
+                     * skipping the standard flat→[Co][Ci][K] rearrangement. */
                     free(t->data);
-                    t->data = (uint8_t *)flat_f32;
+                    t->data = (uint8_t *)ov_f32;
                     t->data_size = (int)ov_size;
-                    t->elem_size = 4;
-                    free(ov_f32);
-                    fprintf(stderr, "[model_loader] LIBNC OVR: %s (%ld bytes) [Co][Ci][K]→flat\n",
+                    t->elem_size = 0;  /* sentinel: data is [Co][Ci][K], skip rearrange */
+                    fprintf(stderr, "[model_loader] LIBNC OVR: %s (%ld bytes) [Co][Ci][K] direct\n",
                             t->name, ov_size);
                 }
                 fclose(ovf);
