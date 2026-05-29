@@ -39,7 +39,7 @@
 
 #define BATCH_FRAMES    16
 #define CONTEXT_PAD     10
-#define DEBUG_DECODER    0
+#define DEBUG_DECODER    1
 
 #if DEBUG_DECODER
 #define DBG(...) fprintf(stderr, __VA_ARGS__)
@@ -324,25 +324,48 @@ float *dequant_weights(const DACTensor *weight_v, const DACTensor *weight_g,
 
     /* Output layout:
      * - conv1d (is_ct=0): [Co][Ci][K] — standard conv1d kernel access
-     * - convt  (is_ct=1): [Co][K][Ci] — nc_conv_transpose_1d reshapes to
-     *   [Co,K,1,Ci] and uses NHWC access; the native flat order IS [Co][K][Ci].
-     *   Rearranging to [Co][Ci][K] would swap (K,Ci) dims and break access. */
-    for (int ci = 0; ci < Ci; ci++) {
-        for (int k = 0; k < K; k++) {
-            for (int co = 0; co < Co; co++) {
-                if (is_ct) {
-                    /* convt: keep flat [Co][K][Ci] order (no rearrangement) */
-                    int src_idx = co * K * Ci + k * Ci + ci;
-                    w_f32[src_idx] = src_f32[src_idx];
-                } else {
-                    /* conv1d: flat [Ci][K][Co] → [Co][Ci][K] */
-                    int src_idx = ci * K * Co + k * Co + co;
-                    int dst_idx = co * Ci * K + ci * K + k;
-                    w_f32[dst_idx] = src_f32[src_idx];
-                }
-            }
+     * - convt  (is_ct=1): [Co][K][Ci] — native flat order
+     *
+     * L2 normalization: ONLY for K=1 layers (quantizer in_proj/out_proj).
+     * Decoder weight_v tensors (K>1) from nc_convert DO NOT have L2 pre-baked
+     * (verified: applying L2 to decoder layers causes 10× convt amplification). */
+    if (K == 1) {
+        int norm_channels = is_ct ? Ci : Co;
+        float *norms = (float *)calloc((size_t)norm_channels, sizeof(float));
+        if (norms) {
+            for (int ci = 0; ci < Ci; ci++)
+                for (int k = 0; k < K; k++)
+                    for (int co = 0; co < Co; co++) {
+                        int src_idx = is_ct ? co * K * Ci + k * Ci + ci : ci * K * Co + k * Co + co;
+                        int ni = is_ct ? ci : co;
+                        if (ni < norm_channels) norms[ni] += src_f32[src_idx] * src_f32[src_idx];
+                    }
+            for (int i = 0; i < norm_channels; i++) norms[i] = sqrtf(norms[i] + 1e-12f);
+            for (int ci = 0; ci < Ci; ci++)
+                for (int k = 0; k < K; k++)
+                    for (int co = 0; co < Co; co++) {
+                        if (is_ct) {
+                            w_f32[co * K * Ci + k * Ci + ci] = src_f32[co * K * Ci + k * Ci + ci] / ((ci < norm_channels) ? norms[ci] : 1.0f);
+                        } else {
+                            w_f32[co * Ci * K + ci * K + k] = src_f32[ci * K * Co + k * Co + co] / ((co < norm_channels) ? norms[co] : 1.0f);
+                        }
+                    }
+            free(norms);
+            free(src_f32);
+            return w_f32;
         }
     }
+
+    /* Without L2 norm (K>1 decoder weights): just rearrange */
+    for (int ci = 0; ci < Ci; ci++)
+        for (int k = 0; k < K; k++)
+            for (int co = 0; co < Co; co++) {
+                if (is_ct) {
+                    w_f32[co * K * Ci + k * Ci + ci] = src_f32[co * K * Ci + k * Ci + ci];
+                } else {
+                    w_f32[co * Ci * K + ci * K + k] = src_f32[ci * K * Co + k * Co + co];
+                }
+            }
 
     free(src_f32);
 
@@ -418,24 +441,27 @@ static int decode_batch(DACTensor *ts, int nt,
         float *op_f32 = dequant_weights(op_wv, NULL, op_bias, &op_Ci, &op_K, &op_Co, &dummy);
         if (!ip_f32 || !op_f32) { free(ip_f32); free(op_f32); continue; }
 
-        /* in_proj: [1024, 1, 8] → 1024 rows of 8 values
-         * out_proj: [8, 1, 1024] → 8 rows of 1024 values */
-        for (int f = 0; f < ctx_frames; f++) {
-            int code_idx = (code_offset + f) * n_cb + cb;
-            int raw = codes[code_idx];
-            if (raw < 0) raw = 0;
-            if (raw >= ip_Ci) raw = ip_Ci - 1;
+            /* in_proj: [1024, 1, 8] → dequant output [Co=8][Ci=1024][K=1]
+             * Access: ip_f32[o * Ci + raw] gives element (co=o, ci=raw, k=0).
+             * out_proj: [8, 1, 1024] → dequant output [Co=1024][Ci=8][K=1]
+             * Access: op_f32[o * Ci + d] gives element (co=d?, ci=o, k=0). */
+            for (int f = 0; f < ctx_frames; f++) {
+                int code_idx = (code_offset + f) * n_cb + cb;
+                int raw = codes[code_idx];
+                if (raw < 0) raw = 0;
+                if (raw >= ip_Ci) raw = ip_Ci - 1;
 
-            /* in_proj lookup: row 'raw' gives 8 intermediate values */
-            float ip_vec[8];
-            for (int o = 0; o < 8 && o < ip_Co; o++)
-                ip_vec[o] = ip_f32[raw * ip_Co + o];
+                /* in_proj lookup: [Co][Ci][K] layout */
+                float ip_vec[8];
+                for (int o = 0; o < 8 && o < ip_Co; o++)
+                    ip_vec[o] = ip_f32[o * ip_Ci + raw];
 
-            /* out_proj: 8×1024 matrix multiply → 1024-dim feature */
+            /* out_proj: 8×1024 matrix multiply → 1024-dim feature
+             * dequant output [Co=1024][Ci=8][K=1]. Access: op_f32[co*Ci + ci]. */
             for (int d = 0; d < op_Co && d < rvq_dim; d++) {
                 float sum = 0;
                 for (int o = 0; o < 8 && o < op_Ci; o++)
-                    sum += ip_vec[o] * op_f32[o * op_Co + d];
+                    sum += ip_vec[o] * op_f32[d * op_Ci + o];
                 rvq_out[d * ctx_frames + f] += sum;
             }
         }
