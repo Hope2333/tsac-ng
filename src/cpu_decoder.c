@@ -400,6 +400,7 @@ static int decode_batch(DACTensor *ts, int nt,
         free(op_f32);
     }
 
+    DUMP_ACT(rvq_out, 1024*ctx_frames, "rvq_out");
     DBG("[DEBUG] RVQ NaN: %d/%d\n", count_nan(rvq_out, 1024*ctx_frames), 1024*ctx_frames);
 
     /* model.0 conv1d */
