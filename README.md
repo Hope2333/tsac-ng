@@ -1,6 +1,6 @@
 # tsac-ng — Neural Audio Codec (Multi-Backend)
 
-**tsac-ng v0.3.0** — Reverse-engineered, AI-augmented reimplementation of the TSAC neural audio codec.
+**tsac-ng v0.2.0** — Reverse-engineered, AI-augmented reimplementation of the TSAC neural audio codec.
 Compatible with the `.txc` container format and `.bin` model files.
 
 > **🤖 AI-Assisted Development**: Built by a single developer working with AI coding
@@ -228,5 +228,5 @@ MIT
 ---
 
 ```
-tsac-ng v0.3.0 — Copyright (c) 2026 Hope2333 (幽零小喵)
+tsac-ng v0.2.0 — Copyright (c) 2026 Hope2333 (幽零小喵)
 ```
