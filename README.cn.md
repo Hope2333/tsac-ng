@@ -1,124 +1,70 @@
 # tsac-ng — 神经音频编解码器（多后端）
 
-**tsac-ng v0.1.0** — 从第一性原理独立开发的神经音频编解码器。
-兼容 `.txc` 容器格式和 `.bin` 模型文件。
+**tsac-ng v0.1.4** — 对 TSAC 神经音频编解码器的逆向工程重建。兼容 `.txc` 容器格式和 `.bin` 模型文件。
 
-> 与 TSAC 的关系：如同 Linux 之于 Unix — 生态系统兼容，从零构建，零共享代码。
+> **🤖 AI 辅助开发**：单人开发者配合 AI 编程助手完成 **102 轮调查**（R079-R180，4 个阶段）。
+> 架构设计、GDB/objdump/LD_PRELOAD 地面真值提取和验证由人类主导；实现由 AI 增强。
+> 详见 [METHODOLOGY.md](.ai/METHODOLOGY.md)。
 
-## 特性
+---
 
-- **5 级 CPU SIMD**，覆盖 3 种架构（x86-64 AVX/AVX2/AVX-512、ARM NEON/SVE、RISC-V RVV）
-- **3 种 GPU 后端**：CUDA (NVIDIA)、HIP/ROCm (AMD)、Vulkan（跨平台）
-- **1 种实验性后端**：LLVM JIT
-- 运行时 CPUID 自动调度 — 自动选择最优 SIMD，无 SIMD 时回退标量
-- 零 `system()` 调用 — 完全自包含
-- CLI 兼容原始 `tsac`（2024-04-08）
+## 兼容性状态
+
+| 功能 | 状态 | % | 说明 |
+|---------|:------:|:--:|-------|
+| **自有快速 TXC 编解码** | ✅ | 100% | 原始 uint8 格式 |
+| **原版快速 TXC 解码** | 🎯 | 90% | 索引 100%。**RMS 0.2023≈0.2029**。AVX-512 已修复 |
+| **原版普通 TXC 解码** | 🔧 | 60% | Transformer+range coder 已实现。端到端待集成 |
+| **CRC32 校验** | ✅ | 100% | 多项式 0x04C11DB7 |
+| **详细输出** | ✅ | 100% | 全部匹配原版 |
+| **DAC 解码架构** | ✅ | 95% | 32conv/29snake/4convtr GDB 验证 |
+| **BF8 反量化** | ✅ | 80% | 全管线逆向。权重 corr 0.82 |
+| **CPU SIMD** | ✅ | 95% | AVX-512/AVX2/NEON/SVE/RVV。AVX-512 bug 已修复 |
+| **CUDA** | ✅ | 85% | 完整解码+编码 |
+| **HIP** | ✅ | 65% | 编译通过 |
+| **Vulkan** | 🔧 | 40% | 管线基础完成，解码/编码未接线 |
+| **LLVM JIT** | 🔧 | 35% | 4 JIT 函数工作，解码图未完成 |
+| **编码器** | ✅ | 70% | 跨步卷积已修复 |
+| **Transformer** | ✅ | 80% | 12L GPT-2 已实现 |
+| **Range Coder** | ✅ | 80% | get_freq+累积+多位 |
+| **Convt 权重** | ✅ | 100% | GDB 确认 stride=K/2 |
+
+### 🎯 Phase 4 里程碑
+
+- **RMS 0.2023 ≈ 目标 0.2029** (99.7% 匹配)
+- AVX-512 70× 放大 bug **已修复** (R161-R164)
+- weight_g 仅用于 model.6 → RMS 精确匹配
+- 0% 削波，多文件全通过
+- 残留：WAV 相关性 ~0（BF8 权重 29% 残差）
+
+---
 
 ## 快速开始
 
 ```bash
-# 构建（CPU 后端，x86-64）
 mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j$(nproc)
-
-# 解压
-./tsac-ng -v d input.txc output.wav
-
-# 使用 CUDA
-cmake .. -DUSE_CUDA=ON -DCUDAToolkit_ROOT=/opt/cuda
-./tsac-ng --cuda -v d input.txc output.wav
-
-# 使用 HIP/ROCm
-cmake .. -DUSE_HIP=ON -DHIP_PATH=/opt/rocm
-./tsac-ng --hip -v d input.txc output.wav
+cmake .. -DCMAKE_BUILD_TYPE=Release && make -j$(nproc)
+./tsac-ng -v d input.txc output.wav                       # 快速 TXC 解码
+./tsac-ng -m /usr/share/tsac/dac_stereo_q8.bin d in.txc out.wav  # 原版解码
 ```
 
 ## 后端状态
 
-| 后端 | 构建 | 运行 | 备注 |
+| 后端 | 构建 | 运行时 | 备注 |
 |---------|:-----:|:-------:|-------|
-| CPU (x86-64) | ✅ | ✅ | AVX/AVX2/AVX-512 自动调度 |
-| CPU (ARM64) | ✅ | ✅ | NEON + SVE 自动检测 |
-| CPU (RISC-V) | ✅ | ✅ | RVV + 标量回退 |
-| CUDA | ✅ | ✅ | SM 8.0+, Runtime API |
-| HIP/ROCm | ✅ | ✅ | gfx1030+, ROCm 7.x |
-| Vulkan | ✅ | ⚠️ | ARM64 Mali 交叉编译 |
-| LLVM JIT | ✅ | ⚠️ | 实验性，LLVM 22 上 init 挂起 |
+| CPU (x86-64) | ✅ | ✅ | AVX/AVX2/AVX-512 |
+| CPU (ARM64) | ✅ | ✅ | NEON + SVE |
+| CPU (RISC-V) | ✅ | ✅ | RVV + scalar |
+| CUDA | ✅ | ✅ | SM 8.0+ |
+| HIP/ROCm | ✅ | ✅ | gfx1030+ |
+| Vulkan | ✅ | ⚠️ | 跨平台 |
+| LLVM JIT | ✅ | ⚠️ | 实验性 |
 
-## 架构
+## 已知限制
 
-```
-┌─────────────┐    ┌──────────────┐    ┌──────────────┐
-│  .txc 文件   │───▶│  txc_format  │───▶│ codebook_idx │
-└─────────────┘    └──────────────┘    └──────┬───────┘
-                                              │
-                    ┌─────────────────────────┘
-                    ▼
-┌──────────┐  RVQ 查表  ┌──────────┐  解码图  ┌──────┐
-│ .bin     │───────────▶│  1024 维  │─────────▶│ PCM  │
-│ 模型     │  12 个码本  │  特征    │  7 层 DAC │ 音频 │
-└──────────┘            └──────────┘           └──────┘
-```
-
-**解码器图**：RVQ 码本 → Conv1d(1024→1536) → 4× 残差块
-(1536→768→384→192→96) → Snake → Conv1d(96→2) → PCM
-
-## CLI 参考
-
-```
-tsac-ng [选项] c|d|t 输入文件 输出文件
-
-选项（兼容原始 tsac）：
-  --cuda, --hip, --vulkan, --llvm   GPU/加速器后端
-  -q, --n_codebooks n    码本数（立体声 1-12，单声道 1-9，默认=最大值）
-  -T n                   线程数（默认=1）
-  -v                     详细模式
-  -h, --help             显示帮助
-  -s, --separate_channels  立体声分离为双单声道
-  -c, --channels n       强制声道数
-  -f, --fast             快速模式（无 Transformer）
-  -m, --model 路径        模型文件路径
-  -M, --trf_model 路径    Transformer 模型路径
-  --batch_size n         批大小（默认=自动）
-```
-
-## 交叉编译
-
-```bash
-# ARM64（Termux、树莓派 5 等）
-cmake .. -DCMAKE_TOOLCHAIN_FILE=cmake/Toolchain-arm64.cmake
-
-# RISC-V（实验性）
-cmake .. -DCMAKE_TOOLCHAIN_FILE=cmake/Toolchain-riscv64.cmake
-```
-
-## 项目结构
-
-```
-tsac-ng/
-├── src/
-│   ├── cpu_decoder.c      # CPU 解码器 + x86 SIMD 调度
-│   ├── tsac_codec.c       # 编解码 API + WAV I/O
-│   ├── txc_format.c       # .txc 容器解析器
-│   ├── model_loader.c     # .bin 模型加载器（BF8/float32）
-│   ├── main.c             # CLI（兼容原始 tsac）
-│   ├── cuda/              # CUDA 后端
-│   ├── llvm/              # LLVM JIT 后端（实验性）
-│   ├── vulkan/            # Vulkan 计算后端
-│   ├── arch/arm/          # ARM NEON + SVE
-│   └── arch/riscv/        # RISC-V RVV
-├── hip/                   # HIP/ROCm 后端
-├── include/               # 公共头文件
-├── cmake/                 # 工具链文件
-└── experimental/          # 实验性代码
-```
-
-## 兼容性
-
-- `.txc` 容器格式（原始 TSAC）
-- `.bin` 模型文件（DAC 立体声/单声道, q8）
-- 原始 `tsac` CLI 参数
+- 原版快速 TXC：RMS 已匹配，WAV 波形未对齐（BF8 权重残差）
+- 普通 TXC：端到端集成待完成
+- GPU：仅 CUDA 完整可用
 
 ## 许可证
 
@@ -127,5 +73,5 @@ MIT
 ---
 
 ```
-tsac-ng v0.1.0 — Copyright (c) 2026 Hope2333（幽零小喵）
+tsac-ng v0.1.4 — Copyright (c) 2026 Hope2333 (幽零小喵)
 ```
