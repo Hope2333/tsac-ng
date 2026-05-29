@@ -353,13 +353,16 @@ float *dequant_weights(const DACTensor *weight_v, const DACTensor *weight_g,
         }
     }
 
-    /* Without L2 norm (K>1 decoder weights): rearrange + apply weight_g */
+    /* Without L2 norm (K>1 decoder weights): rearrange + apply weight_g.
+     * Only apply weight_g to model.6 (final output layer, K=7, Co=2)
+     * to avoid cumulative undershoot from multi-layer weight_g application. */
     const float *g_data = weight_g ? (const float *)weight_g->data : NULL;
+    int apply_wg = (g_data && Co <= 8) ? 1 : 0; /* weight_g only for small Co layers (model.6) */
     for (int ci = 0; ci < Ci; ci++)
         for (int k = 0; k < K; k++)
             for (int co = 0; co < Co; co++) {
                 float g = 1.0f;
-                if (g_data) {
+                if (apply_wg) {
                     int g_idx = is_ct ? ci : co;
                     if (g_idx < (int)weight_g->dims[2]) g = g_data[g_idx];
                 }

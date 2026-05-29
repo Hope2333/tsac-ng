@@ -405,9 +405,12 @@ void convt1d_avx512(float *o, const float *x, const float *w,
                 for (int j = 0; j < K; j++) {
                     int oi = ii*stride + j - P;
                     if (oi >= 0 && oi < To) {
-                        /* Load 16 weights */
-                        int w_idx = ocb * K * Ci + j * Ci + ic;
-                        __m512 w16 = _mm512_loadu_ps(&w[w_idx]);
+                        /* Gather 16 weights for channels ocb..ocb+15.
+                         * [Co][K][Ci] layout: stride = K*Ci between channels. */
+                        float wt[16];
+                        for (int k = 0; k < 16; k++)
+                            wt[k] = w[(ocb + k) * K * Ci + j * Ci + ic];
+                        __m512 w16 = _mm512_loadu_ps(wt);
                         /* Load current output values */
                         __m512 ov = _mm512_loadu_ps(&o[ocb*To + oi]);
                         /* FMA: ov += vb * w16 */
