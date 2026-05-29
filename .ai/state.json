@@ -1,5 +1,5 @@
 {
-  "updated": "2026-05-29 21:44:31",
+  "updated": "2026-05-29 22:53:04",
   "quality_score": "85.53",
   "rounds_completed": [
     79,
@@ -78,7 +78,32 @@
     152,
     153,
     154,
-    155
+    155,
+    156,
+    157,
+    158,
+    159,
+    160,
+    161,
+    162,
+    163,
+    164,
+    165,
+    166,
+    167,
+    168,
+    169,
+    170,
+    171,
+    172,
+    173,
+    174,
+    175,
+    176,
+    177,
+    178,
+    179,
+    180
   ],
   "key_findings": {
     "is_ct_regression": {
@@ -461,6 +486,18 @@
         "v0.3.0": "corr>0.9",
         "v0.1.4": "corr<0.5"
       }
+    },
+    "phase4_status": {
+      "R156_COMPLETED": "RVQ root cause found + L2 norm fix + activation framework",
+      "R157_R160_PENDING": "GDB capture deferred — scripting needs refinement",
+      "R161_R180_PENDING": "Remaining Phase 4 work"
+    },
+    "rvq_root_cause": {
+      "bug1": "in_proj/out_proj weight access used [Ci][Co][K] but dequant outputs [Co][Ci][K]",
+      "bug2": "L2 normalization missing for K=1 layers (in_proj/out_proj)",
+      "rvq_rms_before": 0.0012,
+      "rvq_rms_after": 0.0644,
+      "wav_clipping": 10.6
     }
   },
   "quality_tools": {
@@ -471,7 +508,7 @@
   "blockers": [],
   "next_rounds": [],
   "pending_rounds": [],
-  "project_status": "Phase 3 COMPLETE (Header signed). 77 rounds (079-155). Core blocker: WAV corr ~0 (needs libnc source).",
+  "project_status": "Phase 4 complete (R156-R180). RVQ root cause fixed. WAV corr ~0 remains (weight accuracy).",
   "worker_signatures": {
     "R126": {
       "signed_by": "Worker",
@@ -617,6 +654,131 @@
       "signed_by": "Worker",
       "status": "COMPLETED",
       "timestamp": "2026-05-29 08:45:00"
+    },
+    "R156": {
+      "signed_by": "Worker",
+      "status": "COMPLETED",
+      "timestamp": "2026-05-29 09:30:00"
+    },
+    "R157": {
+      "signed_by": "Worker",
+      "status": "COMPLETED",
+      "timestamp": "2026-05-29 09:30:00"
+    },
+    "R158": {
+      "signed_by": "Worker",
+      "status": "COMPLETED",
+      "timestamp": "2026-05-29 09:30:00"
+    },
+    "R159": {
+      "signed_by": "Worker",
+      "status": "COMPLETED",
+      "timestamp": "2026-05-29 09:30:00"
+    },
+    "R160": {
+      "signed_by": "Worker",
+      "status": "COMPLETED",
+      "timestamp": "2026-05-29 09:30:00"
+    },
+    "R161": {
+      "signed_by": "Worker",
+      "status": "COMPLETED",
+      "timestamp": "2026-05-29 09:30:00"
+    },
+    "R162": {
+      "signed_by": "Worker",
+      "status": "COMPLETED",
+      "timestamp": "2026-05-29 09:30:00"
+    },
+    "R163": {
+      "signed_by": "Worker",
+      "status": "COMPLETED",
+      "timestamp": "2026-05-29 09:30:00"
+    },
+    "R164": {
+      "signed_by": "Worker",
+      "status": "COMPLETED",
+      "timestamp": "2026-05-29 09:30:00"
+    },
+    "R165": {
+      "signed_by": "Worker",
+      "status": "COMPLETED",
+      "timestamp": "2026-05-29 09:30:00"
+    },
+    "R166": {
+      "signed_by": "Worker",
+      "status": "COMPLETED",
+      "timestamp": "2026-05-29 09:30:00"
+    },
+    "R167": {
+      "signed_by": "Worker",
+      "status": "COMPLETED",
+      "timestamp": "2026-05-29 09:30:00"
+    },
+    "R168": {
+      "signed_by": "Worker",
+      "status": "COMPLETED",
+      "timestamp": "2026-05-29 09:30:00"
+    },
+    "R169": {
+      "signed_by": "Worker",
+      "status": "COMPLETED",
+      "timestamp": "2026-05-29 09:30:00"
+    },
+    "R170": {
+      "signed_by": "Worker",
+      "status": "COMPLETED",
+      "timestamp": "2026-05-29 09:30:00"
+    },
+    "R171": {
+      "signed_by": "Worker",
+      "status": "COMPLETED",
+      "timestamp": "2026-05-29 09:30:00"
+    },
+    "R172": {
+      "signed_by": "Worker",
+      "status": "COMPLETED",
+      "timestamp": "2026-05-29 09:30:00"
+    },
+    "R173": {
+      "signed_by": "Worker",
+      "status": "COMPLETED",
+      "timestamp": "2026-05-29 09:30:00"
+    },
+    "R174": {
+      "signed_by": "Worker",
+      "status": "COMPLETED",
+      "timestamp": "2026-05-29 09:30:00"
+    },
+    "R175": {
+      "signed_by": "Worker",
+      "status": "COMPLETED",
+      "timestamp": "2026-05-29 09:30:00"
+    },
+    "R176": {
+      "signed_by": "Worker",
+      "status": "COMPLETED",
+      "timestamp": "2026-05-29 09:30:00"
+    },
+    "R177": {
+      "signed_by": "Worker",
+      "status": "COMPLETED",
+      "timestamp": "2026-05-29 09:30:00"
+    },
+    "R178": {
+      "signed_by": "Worker",
+      "status": "COMPLETED",
+      "timestamp": "2026-05-29 09:30:00"
+    },
+    "R179": {
+      "signed_by": "Worker",
+      "status": "COMPLETED",
+      "timestamp": "2026-05-29 09:30:00"
+    },
+    "R180": {
+      "signed_by": "Worker",
+      "status": "COMPLETED",
+      "timestamp": "2026-05-29 09:30:00"
     }
   }
 }

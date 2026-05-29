@@ -1,21 +1,19 @@
 # Current Status — TSAC Reverse Engineering
 
-## Active Lane: Phase 4 Planned (R156-R180) — WAV Divergence Resolution
+## Active Lane: Phase 4 — R156 COMPLETE, R157-R180 PENDING
 
-| Metric | Value | Phase 4 Target |
-|--------|-------|:--------------:|
-| Rounds | 77 (079-155) + 25 planned | 102 total |
-| WAV corr | ~0 | > 0.5 |
+| Metric | Value | Target |
+|--------|-------|--------|
+| R156 (RVQ fix) | ✅ COMPLETED | — |
+| RVQ RMS | 0.0012→0.0644 | ~0.03-0.06 |
+| WAV corr | ~0 | >0.5 |
+| R157-R180 | 24 rounds PENDING | — |
 | Quality | 85.53 | 87+ |
 
-### Phase 4 Sub-Phases
-| Sub | Rounds | Focus |
-|-----|:------:|-------|
-| 4A | R156-R160 | GDB activation capture (25 tasks) |
-| 4B | R161-R165 | Kernel + layout fixes (21 tasks) |
-| 4C | R166-R170 | Multi-file + multi-backend (21 tasks) |
-| 4D | R171-R175 | Normal TXC integration (21 tasks) |
-| 4E | R176-R180 | Quality + release (22 tasks) |
+### R156 Findings
+- ROOT CAUSE: RVQ weight access layout mismatch + missing L2 norm for K=1
+- Fix applied: correct [Co][Ci][K] access + conditional L2 norm
+- RVQ RMS improved 50×, decoder activations now stable
 
-### Version Plan
-corr > 0.5 → v0.2.0 | corr > 0.9 → v0.3.0 | corr < 0.5 → v0.1.4
+### Next: R157-R180 (24 rounds pending)
+GDB capture infrastructure needs refinement before continuing.
