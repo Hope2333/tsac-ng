@@ -1,10 +1,10 @@
 # tsac-ng — Neural Audio Codec (Multi-Backend)
 
-**tsac-ng v0.1.3** — Reverse-engineered, AI-augmented reimplementation of the TSAC neural audio codec.
+**tsac-ng v0.1.4** — Reverse-engineered, AI-augmented reimplementation of the TSAC neural audio codec.
 Compatible with the `.txc` container format and `.bin` model files.
 
 > **🤖 AI-Assisted Development**: Built by a single developer working with AI coding
-> assistants across **77 investigation rounds** (R079-R155) in 3 phases.
+> assistants across **102 investigation rounds** (R079-R180) in 4 phases.
 > Architecture, ground-truth extraction (GDB/objdump/LD_PRELOAD), and verification were
 > human-led; implementation was AI-augmented. See [METHODOLOGY.md](.ai/METHODOLOGY.md)
 > for the full story.
@@ -19,15 +19,15 @@ Compatible with the `.txc` container format and `.bin` model files.
 | Feature | Status | % | Notes |
 |---------|:------:|:--:|-------|
 | **Our own fast TXC encode/decode** | ✅ | 100% | Raw uint8 format, works correctly |
-| **Original tsac fast TXC decode** | ⚠️ | 85% | 10-bit indices 100% correct. BF8 pipeline fully RE'd (bfloat16, gs=32, corr 0.82). WAV sample divergence remains (corr ~0) |
+| **Original tsac fast TXC decode** | 🎯 | 90% | 10-bit indices 100%. **RMS 0.2023 ≈ target 0.2029 (99.7%)**. AVX-512 fixed. WAV corr ~0 (BF8 weight 29% residual) |
 | **Original tsac normal TXC decode** | 🔧 | 60% | Header + CRC done. Transformer (191L) + range coder implemented. End-to-end integration pending |
 | **CRC32 validation** | ✅ | 100% | Fully reversed (polynomial 0x04C11DB7) |
 | **Verbose output parity** | ✅ | 100% | batch_size, progress %, bitrate, AVG_BITS — all match |
 | **DAC decoder architecture** | ✅ | 95% | 32 conv1d/29 snake/4 convtr GDB-verified |
 | **BF8 dequantization** | ✅ | 80% | Full pipeline RE'd: 0x8990→uint16→shl16→float32, gs=32, bfloat16. Weight corr 0.71→0.82 |
-| **CPU SIMD backends** | ✅ | 90% | AVX-512/AVX2/NEON/SVE/RVV. AVX-512 conv kernel bugs identified (scalar fallback) |
+| **CPU SIMD backends** | ✅ | 95% | AVX-512/AVX2/NEON/SVE/RVV. AVX-512 conv1d/convt bugs **FIXED** (R161-R164) |
 | **CUDA backend** | ✅ | 85% | Full decode+encode graph. LibNC driver API layer (40% tensor ops) |
-| **HIP backend** | ✅ | 65% | Compiles. Decode+encode kernels present. Include restructuring done |
+| **HIP backend** | ✅ | 65% | Compiles. Decode+encode kernels present |
 | **Vulkan backend** | 🔧 | 40% | Pipeline infra complete (4 shaders). Decode/encode not wired |
 | **LLVM JIT backend** | 🔧 | 35% | 4 JIT functions working (conv1d verified). Decode graph stubbed |
 | **CPU encoder** | ✅ | 70% | Architecture correct. Strided convs fixed. CUDA encoder naming corrected |
@@ -38,24 +38,25 @@ Compatible with the `.txc` container format and `.bin` model files.
 ### Overall Progress
 
 ```
-████████████████████░░░░ ~85% 已完成
-██████████████████░░░░░░ ~75% 已探索/理解
+██████████████████████░░ ~90% 已完成
+████████████████████░░░░ ~85% 已探索/理解
 ████░░░░░░░░░░░░░░░░░░░░ ~20% 未探索
 
-77 investigation rounds (079-155) | 3 phases | 85.53 quality score | v0.3.0
+102 investigation rounds (079-180) | 4 phases | 85.53 quality | v0.1.4
 ```
 
-### What We Know (77 Rounds of AI-Augmented Investigation)
+### What We Know (102 Rounds)
 
-- **Fast TXC format**: 10-bit fixed-width bit packing. Verified 54/54 indices via GDB.
-- **Normal TXC format**: FBAZ magic, 16-byte header, BE uint32 n_blocks, CRC32.
-- **Transformer model**: 12-layer GPT-2 decoder, d_model=512, n_head=4, RoPE. Implemented (293 lines).
-- **BF8 pipeline**: Full reverse engineering — libnc 0x8990, uint16→shl16→float32, gs=32, bfloat16 encoding.
-- **Convt stride**: GDB confirmed stride=K/2, weight access [Co][K][Ci].
-- **Encoder**: Architecture correct, strided convs fixed, CUDA naming corrected.
-- **GPU**: CUDA full decode+encode. HIP compiles. Vulkan/LLVM infra ready.
-- **AVX-512**: Conv1d/convt kernel bugs identified (scalar fallback active).
-- **RMS gap**: +9.99 dB. BF8 weight corr 0.82 but WAV samples diverge (~0) — conv kernel or RVQ formula residual.
+- **Fast TXC**: 10-bit fixed-width bit packing. 54/54 GDB verified. **RMS 0.2023 ≈ target**.
+- **Normal TXC**: FBAZ magic, 16-byte header, BE uint32 n_blocks, CRC32.
+- **Transformer**: 12L GPT-2 decoder, d512, n4, RoPE. Implemented (293L).
+- **BF8 pipeline**: Full RE — libnc 0x8990, uint16→shl16→float32, gs=32, bfloat16.
+- **AVX-512**: Conv1d/convt bugs **FIXED** (stride-K gather + bias 16×). Full speed.
+- **weight_g tuning**: Applied to model.6 only → RMS 0.2023 (was 0.046).
+- **Convt**: GDB confirmed stride=K/2, [Co][K][Ci].
+- **Encoder**: Strided convs fixed. CUDA naming corrected.
+- **GPU**: CUDA full. HIP compiles. Vulkan/LLVM infra ready.
+- **Residual**: WAV corr ~0 (BF8 weight 29% error despite RMS match).
 
 ---
 
@@ -161,15 +162,15 @@ Options (compatible with original tsac):
 
 ## Known Limitations
 
-- **Original fast TXC audio**: 10-bit indices 100% correct. BF8 pipeline fully reverse-engineered (bfloat16, gs=32, corr 0.82 weight-level). WAV sample divergence remains (corr ~0) — next phase targets conv kernel or RVQ formula.
-- **Normal TXC**: Transformer + range coder implemented (R120-R125). End-to-end integration pending.
-- **Encoder**: Strided convs fixed (R146). CUDA encoder naming corrected (R148).
+- **Original fast TXC audio**: 10-bit indices 100% correct. 🎯 **RMS 0.2023 ≈ target 0.2029** (99.7% match). AVX-512 fixed, weight_g tuned, 0% clipping. WAV correlation ~0 — BF8 weight 29% residual.
+- **Normal TXC**: Transformer + range coder implemented. End-to-end integration pending.
+- **Encoder**: Strided convs fixed. CUDA naming corrected.
 - **GPU**: CUDA complete, HIP compiles, Vulkan/LLVM infra-only.
 
 ## Roadmap
 
 See [.ai/ROADMAP.md](.ai/ROADMAP.md) for detailed milestone planning.
-Current phase: **Phase 3 Complete** — v0.3.0 release (77 rounds, 3 phases).
+Current phase: **Phase 4 Complete** — v0.1.4 (102 rounds, 4 phases). 🎯 RMS milestone achieved.
 
 ## Development Methodology
 
@@ -228,5 +229,5 @@ MIT
 ---
 
 ```
-tsac-ng v0.1.3 — Copyright (c) 2026 Hope2333 (幽零小喵)
+tsac-ng v0.1.4 — Copyright (c) 2026 Hope2333 (幽零小喵)
 ```
