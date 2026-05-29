@@ -232,27 +232,29 @@ static int cuda_upload_weights(CudaBackend *b, DACModel *model) {
         CUDA_CHK(cudaMemcpy(gw->d_data, ta->data, n_bytes, cudaMemcpyHostToDevice));
     }
 
-    /* Upload encoder weights with "enc:" prefix */
+    /* Upload encoder weights with "enc:" prefix.
+     * NOTE: model uses "encoder.block.X" naming (confirmed via strings). */
     const char *enc_weight_names[] = {
-        "encoder.model.0",
-        "encoder.model.1.block.1",
-        "encoder.model.2.block.1",
-        "encoder.model.3.block.1",
-        "encoder.model.4.block.1",
-        "encoder.model.6",
+        "encoder.block.0",
+        "encoder.block.6",
+        /* Strided convs (block.4 = strided, K=4/8/16/16) */
+        "encoder.block.1.block.4",
+        "encoder.block.2.block.4",
+        "encoder.block.3.block.4",
+        "encoder.block.4.block.4",
         /* Inner blocks */
-        "encoder.model.1.block.2.block.1",
-        "encoder.model.1.block.3.block.1",
-        "encoder.model.1.block.4.block.1",
-        "encoder.model.2.block.2.block.1",
-        "encoder.model.2.block.3.block.1",
-        "encoder.model.2.block.4.block.1",
-        "encoder.model.3.block.2.block.1",
-        "encoder.model.3.block.3.block.1",
-        "encoder.model.3.block.4.block.1",
-        "encoder.model.4.block.2.block.1",
-        "encoder.model.4.block.3.block.1",
-        "encoder.model.4.block.4.block.1",
+        "encoder.block.1.block.0.block.1",
+        "encoder.block.1.block.1.block.1",
+        "encoder.block.1.block.2.block.1",
+        "encoder.block.2.block.0.block.1",
+        "encoder.block.2.block.1.block.1",
+        "encoder.block.2.block.2.block.1",
+        "encoder.block.3.block.0.block.1",
+        "encoder.block.3.block.1.block.1",
+        "encoder.block.3.block.2.block.1",
+        "encoder.block.4.block.0.block.1",
+        "encoder.block.4.block.1.block.1",
+        "encoder.block.4.block.2.block.1",
     };
     int n_enc_wl = sizeof(enc_weight_names) / sizeof(enc_weight_names[0]);
     for (int i = 0; i < n_enc_wl && b->n_gpu_weights < MAX_GPU_WEIGHTS; i++) {
@@ -299,23 +301,23 @@ static int cuda_upload_weights(CudaBackend *b, DACModel *model) {
 
     /* Upload encoder snake alphas */
     const char *enc_snake_names[] = {
-        "encoder.model.1.block.0.alpha",
-        "encoder.model.2.block.0.alpha",
-        "encoder.model.3.block.0.alpha",
-        "encoder.model.4.block.0.alpha",
-        "encoder.model.5.alpha",
-        "encoder.model.1.block.2.block.0.alpha",
-        "encoder.model.1.block.3.block.0.alpha",
-        "encoder.model.1.block.4.block.0.alpha",
-        "encoder.model.2.block.2.block.0.alpha",
-        "encoder.model.2.block.3.block.0.alpha",
-        "encoder.model.2.block.4.block.0.alpha",
-        "encoder.model.3.block.2.block.0.alpha",
-        "encoder.model.3.block.3.block.0.alpha",
-        "encoder.model.3.block.4.block.0.alpha",
-        "encoder.model.4.block.2.block.0.alpha",
-        "encoder.model.4.block.3.block.0.alpha",
-        "encoder.model.4.block.4.block.0.alpha",
+        "encoder.block.5.alpha",
+        "encoder.block.1.block.0.alpha",
+        "encoder.block.1.block.2.block.0.alpha",
+        "encoder.block.1.block.3.block.0.alpha",
+        "encoder.block.1.block.4.block.0.alpha",
+        "encoder.block.2.block.0.alpha",
+        "encoder.block.2.block.2.block.0.alpha",
+        "encoder.block.2.block.3.block.0.alpha",
+        "encoder.block.2.block.4.block.0.alpha",
+        "encoder.block.3.block.0.alpha",
+        "encoder.block.3.block.2.block.0.alpha",
+        "encoder.block.3.block.3.block.0.alpha",
+        "encoder.block.3.block.4.block.0.alpha",
+        "encoder.block.4.block.0.alpha",
+        "encoder.block.4.block.2.block.0.alpha",
+        "encoder.block.4.block.3.block.0.alpha",
+        "encoder.block.4.block.4.block.0.alpha",
     };
     for (int i = 0; i < (int)(sizeof(enc_snake_names)/sizeof(enc_snake_names[0])) && b->n_gpu_weights < MAX_GPU_WEIGHTS; i++) {
         DACTensor *ta = tf(ts, nt, enc_snake_names[i]);
@@ -645,76 +647,70 @@ extern "C" int tsac_cuda_encode(void *priv, void *model_ptr,
     CUDA_CHK(cudaMalloc(&d_pcm, pcm_bytes));
     CUDA_CHK(cudaMemcpy(d_pcm, pcm, pcm_bytes, cudaMemcpyHostToDevice));
 
-    /* encoder.model.6: Conv1d(channels→96, K=7) */
-    GpuWeight *e6 = cuda_find_enc_weight(b, "encoder.model.6");
+    /* encoder.block.6: Conv1d(channels→96, K=7) */
+    GpuWeight *e6 = cuda_find_enc_weight(b, "enc:encoder.block.6");
     float *d_cur = cuda_backend_get_buf(b, 0, 96 * nf * sizeof(float));
     if (!d_cur) { cudaFree(d_pcm); return TSAC_ERR_MEMORY; }
     CUDA_CHK(cudaMemsetAsync(d_cur, 0, 96 * nf * sizeof(float), s));
     if (e6) {
         CUDA_CHK(launch_conv1d(d_cur, d_pcm, e6->d_data, NULL, nf, e6->K, e6->Ci, e6->Co, s));
-        GpuWeight *b6 = cuda_find_enc_weight(b, "encoder.model.6.bias");
+        GpuWeight *b6 = cuda_find_enc_weight(b, "enc:encoder.block.6.bias");
         if (b6) CUDA_CHK(launch_add_bias(d_cur, b6->d_data, nf, 96, s));
     }
     cudaFree(d_pcm);
 
-    /* encoder.model.5: Snake(96) */
-    GpuWeight *e5 = cuda_find_enc_weight(b, "encoder.model.5.alpha");
+    /* encoder.block.5: Snake(96) */
+    GpuWeight *e5 = cuda_find_enc_weight(b, "enc:encoder.block.5.alpha");
     if (e5) CUDA_CHK(launch_snake(d_cur, e5->d_data, 96 * nf, 96, s));
 
-    /* Blocks 4→3→2→1 (reverse order from decoder: 96→192→384→768→1536) */
-    int enc_c_out[4] = {192, 384, 768, 1536};
+    /* Blocks 4→3→2→1 (reverse order: 96→192→384→768→1536) */
     int cur_C = 96;
     int cur_T = nf;
 
     for (int blk = 4; blk >= 1; blk--) {
-        int idx = 4 - blk;
-
-        /* Snake before conv */
+        /* Snake before strided conv */
         char sname[128];
-        snprintf(sname, sizeof(sname), "encoder.model.%d.block.0.alpha", blk);
+        snprintf(sname, sizeof(sname), "enc:encoder.block.%d.block.0.alpha", blk);
         GpuWeight *sa = cuda_find_enc_weight(b, sname);
         if (sa) CUDA_CHK(launch_snake(d_cur, sa->d_data, cur_C * cur_T, sa->Ci, s));
 
-        /* Conv1d (no downsampling in DAC encoder) */
+        /* Strided conv: block.4.weight_v with K=4/8/16/16, stride=K/2 */
         char wname[128];
-        snprintf(wname, sizeof(wname), "encoder.model.%d.block.1", blk);
+        snprintf(wname, sizeof(wname), "enc:encoder.block.%d.block.4", blk);
         GpuWeight *cw = cuda_find_enc_weight(b, wname);
-        int next_C = enc_c_out[idx];
-        int next_T = cur_T;
+        if (!cw) continue;
+        int next_C = cw->Co;
+        int stride = cw->K / 2;
+        int next_T = (cur_T + stride - 1) / stride;
 
-        float *d_next = cuda_backend_get_buf(b, idx + 1, next_C * next_T * sizeof(float));
+        float *d_next = cuda_backend_get_buf(b, blk, next_C * next_T * sizeof(float));
         if (!d_next) return TSAC_ERR_MEMORY;
         CUDA_CHK(cudaMemsetAsync(d_next, 0, next_C * next_T * sizeof(float), s));
-
-        if (cw) {
-            CUDA_CHK(launch_conv1d(d_next, d_cur, cw->d_data, NULL,
-                                    next_T, cw->K, cw->Ci, cw->Co, s));
-            char bname[128];
-            snprintf(bname, sizeof(bname), "encoder.model.%d.block.1.bias", blk);
-            GpuWeight *cb = cuda_find_enc_weight(b, bname);
-            if (cb) CUDA_CHK(launch_add_bias(d_next, cb->d_data, next_T, next_C, s));
-        }
+        CUDA_CHK(launch_conv1d_strided(d_next, d_cur, cw->d_data, NULL,
+                                        next_T, cw->K, cw->Ci, cw->Co, cur_T, stride, s));
+        char bname[128];
+        snprintf(bname, sizeof(bname), "enc:encoder.block.%d.block.4.bias", blk);
+        GpuWeight *cb = cuda_find_enc_weight(b, bname);
+        if (cb) CUDA_CHK(launch_add_bias(d_next, cb->d_data, next_T, next_C, s));
 
         d_cur = d_next;
         cur_C = next_C;
         cur_T = next_T;
 
-        /* Inner blocks (snake→conv1d K=7→snake→conv1d K=1) × 3 */
-        for (int inner = 2; inner <= 4; inner++) {
-            /* Snake */
+        /* Inner residual units (snake→K=7 conv → snake → K=1 conv) × 3 */
+        for (int inner = 0; inner <= 2; inner++) {
             char isname[160];
-            snprintf(isname, sizeof(isname), "encoder.model.%d.block.%d.block.0.alpha", blk, inner);
+            snprintf(isname, sizeof(isname), "enc:encoder.block.%d.block.%d.block.0.alpha", blk, inner);
             GpuWeight *gis = cuda_find_enc_weight(b, isname);
             if (gis) CUDA_CHK(launch_snake(d_cur, gis->d_data, cur_C * cur_T, gis->Ci, s));
 
-            /* Conv1d K=7 */
             char iwname[160], ibname[160];
-            snprintf(iwname, sizeof(iwname), "encoder.model.%d.block.%d.block.1", blk, inner);
-            snprintf(ibname, sizeof(ibname), "encoder.model.%d.block.%d.block.1.bias", blk, inner);
+            snprintf(iwname, sizeof(iwname), "enc:encoder.block.%d.block.%d.block.1", blk, inner);
+            snprintf(ibname, sizeof(ibname), "enc:encoder.block.%d.block.%d.block.1.bias", blk, inner);
             GpuWeight *giw = cuda_find_enc_weight(b, iwname);
             GpuWeight *gib = cuda_find_enc_weight(b, ibname);
             if (giw) {
-                float *d_tmp = cuda_backend_get_buf(b, 6, cur_C * cur_T * sizeof(float));
+                float *d_tmp = cuda_backend_get_buf(b, 6 + inner, cur_C * cur_T * sizeof(float));
                 if (!d_tmp) return TSAC_ERR_MEMORY;
                 CUDA_CHK(cudaMemsetAsync(d_tmp, 0, cur_C * cur_T * sizeof(float), s));
                 CUDA_CHK(launch_conv1d(d_tmp, d_cur, giw->d_data, NULL,
@@ -725,15 +721,15 @@ extern "C" int tsac_cuda_encode(void *priv, void *model_ptr,
         }
     }
 
-    /* encoder.model.0: Conv1d(1536→1024, K=7) */
-    GpuWeight *e0 = cuda_find_enc_weight(b, "encoder.model.0");
+    /* encoder.block.0: Conv1d(1536→1024, K=7) */
+    GpuWeight *e0 = cuda_find_enc_weight(b, "enc:encoder.block.0");
     float *d_features = cuda_backend_get_buf(b, 5, 1024 * cur_T * sizeof(float));
     if (!d_features) return TSAC_ERR_MEMORY;
     CUDA_CHK(cudaMemsetAsync(d_features, 0, 1024 * cur_T * sizeof(float), s));
     if (e0) {
         CUDA_CHK(launch_conv1d(d_features, d_cur, e0->d_data, NULL,
                                 cur_T, e0->K, e0->Ci, e0->Co, s));
-        GpuWeight *b0 = cuda_find_enc_weight(b, "encoder.model.0.bias");
+        GpuWeight *b0 = cuda_find_enc_weight(b, "enc:encoder.block.0.bias");
         if (b0) CUDA_CHK(launch_add_bias(d_features, b0->d_data, cur_T, 1024, s));
     }
 
