@@ -266,21 +266,55 @@ float *dequant_weights(const DACTensor *weight_v, const DACTensor *weight_g,
     } else {
         /* LibNC BF8 format: [all int8 values (src_size bytes)]
          *                  [all uint8 scales (n_groups bytes)]
-         * Each group has group_size = src_size / n_groups = min(K*2,16) values.
-         * Scale for values in group g is at scales[g]. */
+         * Storage group size (stg_gs) = src_size / n_groups = min(K*2, 16).
+         * Runtime groups of 32 values with combined bfloat16 scale.
+         * Re-group from stg_gs→32 using L2-weighted scale averaging. */
         int n_groups = weight_v->data_size - src_size;
         if (n_groups <= 0 || src_size % n_groups != 0) {
             free(src_f32); free(w_f32); return NULL;
         }
-        int group_size = src_size / n_groups;
-        const uint8_t *values = weight_v->data;
-        const uint8_t *scales = weight_v->data + src_size;
-        float scale_base = 1.0f / (127.0f * 4096.0f);
-        for (int g = 0; g < n_groups; g++) {
-            float s = (float)(scales[g] ? scales[g] : 1) * scale_base;
-            for (int i = 0; i < group_size; i++) {
-                int idx = g * group_size + i;
-                src_f32[idx] = (float)((int8_t)values[idx]) * s;
+        int stg_gs = src_size / n_groups;
+        const int8_t *values = (const int8_t *)weight_v->data;
+        const uint8_t *raw_scales = weight_v->data + src_size;
+        
+        /* Process in 32-value blocks */
+        int gs32 = 32;
+        int n_gs32 = src_size / gs32;
+        
+        for (int block = 0; block < n_gs32; block++) {
+            int start = block * gs32;
+            int end = start + gs32;
+            
+            /* Compute L2-weighted average of contributing raw scales */
+            double sum_sq = 0, weighted_scale = 0, weight_sum = 0;
+            
+            for (int idx = start; idx < end; ) {
+                int rg = idx / stg_gs;
+                int rg_end = (rg + 1) * stg_gs;
+                int contrib_end = end < rg_end ? end : rg_end;
+                
+                if (contrib_end > idx) {
+                    float raw_scale = (float)(raw_scales[rg] ? raw_scales[rg] : 1);
+                    float group_l2 = 0;
+                    for (int j = idx; j < contrib_end; j++) {
+                        float v = (float)values[j];
+                        group_l2 += v * v;
+                    }
+                    sum_sq += group_l2;
+                    weighted_scale += raw_scale * group_l2;
+                    weight_sum += group_l2;
+                }
+                idx = contrib_end;
+            }
+            
+            /* Combined float32 scale */
+            float combined_scale = (weight_sum > 0)
+                ? (float)(weighted_scale / weight_sum) / (127.0f * 4096.0f)
+                : 1.0f / (127.0f * 4096.0f);
+            
+            /* Apply scale to 32 values */
+            for (int j = 0; j < gs32; j++) {
+                src_f32[start + j] = (float)values[start + j] * combined_scale;
             }
         }
     }
