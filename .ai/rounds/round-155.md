@@ -24,4 +24,17 @@ accuracy (corr ~0) is the remaining critical issue requiring future work.
 - libnc override mechanism established
 
 Residual: WAV correlation ~0 — samples diverge despite 0.82 BF8 weight corr.
-Requires next-phase investigation (conv kernel or RVQ formula).
+
+## Phase 4 Planning
+R156 (RVQ root cause) COMPLETED. Phase 4A-4B round papers (R157-R165) created:
+- `.ai/rounds/round-157.md` — Per-layer activation comparison
+- `.ai/rounds/round-158.md` — GDB capture infrastructure refinement
+- `.ai/rounds/round-159.md` — Complete per-layer correlation heatmap
+- `.ai/rounds/round-160.md` — Conv1d kernel comparison (scalar vs AVX2 vs AVX-512)
+- `.ai/rounds/round-161.md` — Fix AVX-512 conv1d kernel
+- `.ai/rounds/round-162.md` — Fix convt kernel [Co][K][Ci] access pattern
+- `.ai/rounds/round-163.md` — Fix is_ct detection for ALL layers
+- `.ai/rounds/round-164.md` — Align snake/tanh with libnc
+- `.ai/rounds/round-165.md` — Full re-verification and residual documentation
+
+All round papers have Status PENDING, Date 2026-05-29.

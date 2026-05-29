@@ -24,3 +24,11 @@
 The dequant_weights output layout changed from [Ci][Co][K] to [Co][Ci][K] during M2,
 but the RVQ lookup code and decoder layer access patterns were not updated.
 Combined with missing L2 norm for K=1 layers (quantizer), RVQ output was 50× too small.
+
+## Phase 4 Handoff
+R156 completes Phase 4A investigation (RQ root cause found and fixed). Phase 4B targets:
+- R157-R159: Activation comparison + GDB infra + correlation heatmap (layer-by-layer isolation)
+- R160-R164: Fix conv1d AVX-512 kernel, convt access, is_ct classification, snake/tanh alignment
+- R165: Full re-verification and residual documentation
+
+Detailed round papers for R157-R165 created at `.ai/rounds/round-{157..165}.md` with Status PENDING.
